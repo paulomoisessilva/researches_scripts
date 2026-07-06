@@ -52,6 +52,26 @@ _FLOAT_COLS = [
 ]
 _INT_COLS = ["number_of_trades"]
 
+# Binance passou a incluir cabeçalho e renomeou algumas colunas a partir de 2022.
+_COLUMN_RENAMES = {
+    "count": "number_of_trades",
+    "taker_buy_volume": "taker_buy_base_volume",
+}
+
+
+def _read_klines_csv(content: str) -> pd.DataFrame:
+    """Lê CSV de klines da Binance (com ou sem cabeçalho)."""
+    first_line = content.split("\n", 1)[0].strip()
+    if first_line.startswith("open_time"):
+        df = pd.read_csv(io.StringIO(content))
+    else:
+        df = pd.read_csv(
+            io.StringIO(content),
+            header=None,
+            names=_RAW_COLUMNS,
+        )
+    return df.rename(columns=_COLUMN_RENAMES)
+
 
 def load_zip_file(path: Path) -> pd.DataFrame:
     """Lê um arquivo ZIP contendo CSV de klines."""
@@ -61,23 +81,15 @@ def load_zip_file(path: Path) -> pd.DataFrame:
             logger.warning("Nenhum CSV dentro do ZIP: %s", path)
             return pd.DataFrame()
         with zf.open(csv_names[0]) as f:
-            content = f.read()
+            content = f.read().decode("utf-8")
 
-    df = pd.read_csv(
-        io.StringIO(content.decode("utf-8")),
-        header=None,
-        names=_RAW_COLUMNS,
-    )
-    return df
+    return _read_klines_csv(content)
 
 
 def load_csv_file(path: Path) -> pd.DataFrame:
     """Lê um arquivo CSV de klines (REST API ou extraído)."""
-    df = pd.read_csv(path)
-    if list(df.columns) == _RAW_COLUMNS:
-        return df
-    df.columns = _RAW_COLUMNS[: len(df.columns)]
-    return df
+    content = path.read_text(encoding="utf-8")
+    return _read_klines_csv(content)
 
 
 def _clean_dataframe(df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:

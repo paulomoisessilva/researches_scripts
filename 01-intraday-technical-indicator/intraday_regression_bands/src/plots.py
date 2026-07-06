@@ -208,28 +208,41 @@ def plot_performance_heatmap_by_cost(
 
 
 def plot_break_even_costs(
-    df_metrics: pd.DataFrame,
+    df_cbe: pd.DataFrame,
     figures_dir: str | Path,
+    *,
+    scenario_cost_bps: float | None = None,
 ) -> Path:
     figures_dir = Path(figures_dir)
     ensure_dir(figures_dir)
 
-    sub = df_metrics[df_metrics["fee_bps"] == 0].copy()
-    if sub.empty or "break_even_cost_bps" not in sub.columns:
+    bec_col = "break_even_total_return_bps"
+    sub = df_cbe.copy()
+    if "fee_bps" in sub.columns:
+        sub = sub[sub["fee_bps"] == 0]
+    if sub.empty or bec_col not in sub.columns:
         logger.warning("Sem dados para break-even costs.")
         return figures_dir / "break_even_costs.png"
 
-    sub = sub.dropna(subset=["break_even_cost_bps"])
-    sub = sub.sort_values("break_even_cost_bps", ascending=False)
+    sub = sub.dropna(subset=[bec_col])
+    sub = sub.sort_values(bec_col, ascending=False)
 
     fig, ax = plt.subplots(figsize=_FIGSIZE, dpi=_DPI)
-    colors = ["#2ecc71" if v > 5 else "#e74c3c" for v in sub["break_even_cost_bps"]]
-    bars = ax.barh(sub["strategy"] + " | " + sub["symbol"] + " " + sub["interval"],
-                   sub["break_even_cost_bps"], color=colors, alpha=0.8)
-    ax.axvline(2.0, color="orange", linewidth=1.5, linestyle="--", label="Custo típico (2 bps)")
-    ax.axvline(5.0, color="red", linewidth=1.5, linestyle="--", label="Custo alto (5 bps)")
-    ax.set_xlabel("Break-even cost (bps por lado)")
-    ax.set_title("Custo de Break-even por Estratégia", fontsize=13, fontweight="bold")
+    colors = ["#2ecc71" if v > 5 else "#e74c3c" for v in sub[bec_col]]
+    ax.barh(sub["strategy"] + " | " + sub["symbol"] + " " + sub["interval"],
+            sub[bec_col], color=colors, alpha=0.8)
+    if scenario_cost_bps is not None:
+        ax.axvline(
+            scenario_cost_bps,
+            color="blue",
+            linewidth=1.5,
+            linestyle="--",
+            label=f"Cenário ativo ({scenario_cost_bps:.0f} bps/lado)",
+        )
+    ax.axvline(2.0, color="orange", linewidth=1.5, linestyle="--", label="Custo típico (2 bps/lado)")
+    ax.axvline(5.0, color="red", linewidth=1.5, linestyle="--", label="Custo alto (5 bps/lado)")
+    ax.set_xlabel("CBE — fee+slippage por lado que zera total_return (bps)")
+    ax.set_title("Break-even OOS walk-forward (total_return = 0)", fontsize=13, fontweight="bold")
     ax.legend(fontsize=9)
     _apply_style(ax)
     fig.tight_layout()
@@ -295,6 +308,8 @@ def generate_all_plots(
     returns_dict: dict[str, pd.Series],
     positions_dict: dict[str, pd.Series],
     figures_dir: str | Path,
+    df_wf_oos: pd.DataFrame | None = None,
+    scenario_cost_bps: float | None = None,
 ) -> list[Path]:
     """Gera todos os gráficos obrigatórios."""
     paths: list[Path] = []
@@ -307,7 +322,12 @@ def generate_all_plots(
         top_strategy = df_metrics.groupby("strategy")["sharpe"].mean().idxmax()
         paths.append(plot_performance_heatmap_by_cost(df_metrics, top_strategy, figures_dir=figures_dir))
 
-    paths.append(plot_break_even_costs(df_metrics, figures_dir))
+    df_cbe = (
+        df_wf_oos
+        if df_wf_oos is not None and not df_wf_oos.empty
+        else df_metrics
+    )
+    paths.append(plot_break_even_costs(df_cbe, figures_dir, scenario_cost_bps=scenario_cost_bps))
     paths.append(plot_trades_over_time(equity_dict, positions_dict, figures_dir))
 
     return paths

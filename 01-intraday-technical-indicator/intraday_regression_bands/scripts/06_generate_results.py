@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 
-from src.config import load_config, get_project_root
+from src.config import load_config, get_project_root, resolve_cost_bps
 from src.plots import generate_all_plots
 from src.report import generate_all_reports
 from src.utils import ensure_dir, setup_logger
@@ -97,9 +97,21 @@ def main() -> None:
         logger.warning("performance_summary.csv não encontrado — rode script 04 primeiro.")
         df_metrics = pd.DataFrame()
 
+    wf_oos_path = tables_dir / "walk_forward_oos_summary.csv"
+    if wf_oos_path.exists():
+        df_wf_oos = pd.read_csv(wf_oos_path)
+        logger.info("Resumo OOS walk-forward carregado: %d estratégias.", len(df_wf_oos))
+    else:
+        logger.warning(
+            "walk_forward_oos_summary.csv não encontrado — rode script 05 para CBE OOS."
+        )
+        df_wf_oos = pd.DataFrame()
+
+    fee_bps, slippage_bps = resolve_cost_bps(cfg, args.top_fee, args.top_slip)
+
     # Carregar equity curves
     equity_dict, returns_dict, positions_dict = _load_equity_curves(
-        backtests_dir, args.top_fee, args.top_slip
+        backtests_dir, fee_bps, slippage_bps
     )
     logger.info("Equity curves carregadas: %d estratégias.", len(equity_dict))
 
@@ -118,6 +130,8 @@ def main() -> None:
         returns_dict=returns_dict,
         positions_dict=positions_dict,
         figures_dir=figures_dir,
+        df_wf_oos=df_wf_oos,
+        scenario_cost_bps=fee_bps + slippage_bps,
     )
     logger.info("%d gráficos gerados.", len(figure_paths))
 

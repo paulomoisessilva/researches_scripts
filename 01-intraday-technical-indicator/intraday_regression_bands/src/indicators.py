@@ -8,6 +8,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
+
+from .utils import setup_logger
+
+logger = setup_logger(__name__)
+
+_REQUIRED_FEATURE_COLS = ("timestamp", "close", "log_return", "log_price")
 
 
 # ---------------------------------------------------------------------------
@@ -235,73 +242,288 @@ def technical_confluence_score(
 # ---------------------------------------------------------------------------
 
 
-def compute_all_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
-    """Calcula todos os indicadores e adiciona ao DataFrame.
+# Colunas base aceitas como entrada (OHLCV + metadados do pipeline).
+_BASE_INPUT_COLS = (
+    "timestamp",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_volume",
+    "number_of_trades",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+    "symbol",
+    "interval",
+)
+
+# Grupos de features necessários por estratégia (grade completa do config).
+_STRATEGY_FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
+    "bollinger": ("base", "bollinger"),
+    "regression_bands": ("base", "regression"),
+    "return_residuals": ("base", "residual"),
+    "rsi": ("base", "rsi"),
+    "stochastic": ("base", "stochastic"),
+    "technical_confluence": ("base", "confluence"),
+    "random": ("base",),
+}
+
+_FEATURE_GROUP_ORDER = (
+    "base",
+    "rsi",
+    "stochastic",
+    "bollinger",
+    "regression",
+    "residual",
+    "confluence",
+)
+
+
+def _order_feature_groups(groups: set[str]) -> tuple[str, ...]:
+    return tuple(g for g in _FEATURE_GROUP_ORDER if g in groups)
+
+
+def _resolve_feature_groups(
+    feat_cfg: dict,
+    strategy_names: list[str] | None = None,
+) -> tuple[str, ...]:
+    """Resolve quais grupos de indicadores calcular.
+
+    Se ``strategy_names`` for informado, usa a união dos grupos exigidos pelas
+    estratégias. Caso contrário, inclui cada seção presente em ``features``.
+    """
+    if strategy_names is not None:
+        groups: set[str] = set()
+        for name in strategy_names:
+            strat_groups = _STRATEGY_FEATURE_GROUPS.get(name)
+            if strat_groups is None:
+                raise ValueError(f"Estratégia desconhecida: {name}")
+            groups.update(strat_groups)
+        return _order_feature_groups(groups)
+
+    groups = {"base"}
+    if "rsi_windows" in feat_cfg:
+        groups.add("rsi")
+    if "stochastic_windows" in feat_cfg:
+        groups.add("stochastic")
+    if "bollinger_windows" in feat_cfg and "bollinger_k" in feat_cfg:
+        groups.add("bollinger")
+    if "regression_windows" in feat_cfg and "regression_k" in feat_cfg:
+        groups.update(("regression", "residual"))
+    if (
+        "rsi_windows" in feat_cfg
+        and "stochastic_windows" in feat_cfg
+        and "bollinger_windows" in feat_cfg
+        and "bollinger_k" in feat_cfg
+    ):
+        groups.add("confluence")
+    return _order_feature_groups(groups)
+
+
+def _extract_base_df(df: pd.DataFrame) -> pd.DataFrame:
+    base_cols = [c for c in _BASE_INPUT_COLS if c in df.columns]
+    return df[base_cols].copy()
+
+
+def _compute_base_features(
+    close: pd.Series,
+) -> dict[str, pd.Series]:
+    log_ret = log_return(close)
+    return {
+        "log_return": log_ret,
+        "log_price": np.log(close),
+    }
+
+
+def _compute_rsi_features(close: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
+    return {f"rsi_{w}": rsi(close, window=w) for w in feat_cfg["rsi_windows"]}
+
+
+def _compute_stochastic_features(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    feat_cfg: dict,
+) -> dict[str, pd.Series]:
+    new_cols: dict[str, pd.Series] = {}
+    for w in feat_cfg["stochastic_windows"]:
+        k, d = stochastic(high, low, close, k_window=w)
+        new_cols[f"stoch_k_{w}"] = k
+        new_cols[f"stoch_d_{w}"] = d
+    return new_cols
+
+
+def _compute_bollinger_features(close: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
+    new_cols: dict[str, pd.Series] = {}
+    for w in feat_cfg["bollinger_windows"]:
+        for k in feat_cfg["bollinger_k"]:
+            k_str = str(k).replace(".", "")
+            upper, mid, lower = bollinger_bands(close, window=w, k=k)
+            new_cols[f"bb_upper_{w}_{k_str}"] = upper
+            new_cols[f"bb_mid_{w}"] = mid
+            new_cols[f"bb_lower_{w}_{k_str}"] = lower
+            new_cols[f"bb_pct_{w}_{k_str}"] = (close - lower) / (upper - lower).replace(0, np.nan)
+    return new_cols
+
+
+def _compute_regression_features(log_price: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
+    new_cols: dict[str, pd.Series] = {}
+    for w in feat_cfg["regression_windows"]:
+        for k in feat_cfg["regression_k"]:
+            k_str = str(k).replace(".", "")
+            upper, fitted, lower = regression_bands(log_price, window=w, k=k)
+            new_cols[f"reg_upper_{w}_{k_str}"] = upper
+            new_cols[f"reg_fitted_{w}"] = fitted
+            new_cols[f"reg_lower_{w}_{k_str}"] = lower
+    return new_cols
+
+
+def _compute_residual_features(log_ret: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
+    new_cols: dict[str, pd.Series] = {}
+    for w in feat_cfg["regression_windows"]:
+        for k in feat_cfg["regression_k"]:
+            k_str = str(k).replace(".", "")
+            upper, residual, lower = return_residual_bands(log_ret, window=w, k=k)
+            new_cols[f"resid_upper_{w}_{k_str}"] = upper
+            new_cols[f"resid_{w}"] = residual
+            new_cols[f"resid_lower_{w}_{k_str}"] = lower
+    return new_cols
+
+
+def _compute_confluence_features(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    feat_cfg: dict,
+) -> dict[str, pd.Series]:
+    bb_k_list = feat_cfg["bollinger_k"]
+    bb_k_default = bb_k_list[1] if len(bb_k_list) > 1 else bb_k_list[0]
+    return {
+        "technical_confluence_score": technical_confluence_score(
+            close, high, low,
+            rsi_window=feat_cfg["rsi_windows"][0],
+            stoch_window=feat_cfg["stochastic_windows"][0],
+            bb_window=feat_cfg["bollinger_windows"][0],
+            bb_k=bb_k_default,
+        ),
+    }
+
+
+def _build_feature_columns(
+    base_df: pd.DataFrame,
+    feat_cfg: dict,
+    groups: tuple[str, ...],
+) -> dict[str, pd.Series]:
+    close = base_df["close"]
+    high = base_df["high"]
+    low = base_df["low"]
+    new_cols: dict[str, pd.Series] = {}
+
+    if "base" in groups:
+        new_cols.update(_compute_base_features(close))
+    if "rsi" in groups:
+        new_cols.update(_compute_rsi_features(close, feat_cfg))
+    if "stochastic" in groups:
+        new_cols.update(_compute_stochastic_features(high, low, close, feat_cfg))
+    if "bollinger" in groups:
+        new_cols.update(_compute_bollinger_features(close, feat_cfg))
+    if "regression" in groups:
+        log_price = new_cols.get("log_price", np.log(close))
+        new_cols.update(_compute_regression_features(log_price, feat_cfg))
+    if "residual" in groups:
+        log_ret = new_cols.get("log_return", log_return(close))
+        new_cols.update(_compute_residual_features(log_ret, feat_cfg))
+    if "confluence" in groups:
+        new_cols.update(_compute_confluence_features(close, high, low, feat_cfg))
+
+    return new_cols
+
+
+def compute_features_for_strategy(
+    strategy_name: str,
+    df: pd.DataFrame,
+    cfg: dict,
+) -> pd.DataFrame:
+    """Calcula apenas os indicadores necessários para uma estratégia."""
+    groups = _STRATEGY_FEATURE_GROUPS.get(strategy_name)
+    if groups is None:
+        raise ValueError(f"Estratégia desconhecida: {strategy_name}")
+
+    feat_cfg = cfg["features"]
+    base_df = _extract_base_df(df)
+    new_cols = _build_feature_columns(base_df, feat_cfg, groups)
+    return pd.concat([base_df, pd.DataFrame(new_cols, index=base_df.index)], axis=1)
+
+
+def compute_all_features(
+    df: pd.DataFrame,
+    cfg: dict,
+    *,
+    strategy_names: list[str] | None = None,
+) -> pd.DataFrame:
+    """Calcula indicadores e adiciona ao DataFrame.
 
     Parameters
     ----------
     df  : DataFrame processado com colunas OHLCV + timestamp.
     cfg : Dicionário de configuração (seção 'features').
+    strategy_names :
+        Se informado, calcula apenas os grupos exigidos pelas estratégias.
+        Caso contrário, calcula cada seção presente em ``cfg['features']``.
     """
     feat_cfg = cfg["features"]
-    result = df.copy()
+    base_df = _extract_base_df(df)
+    groups = _resolve_feature_groups(feat_cfg, strategy_names)
+    new_cols = _build_feature_columns(base_df, feat_cfg, groups)
+    return pd.concat([base_df, pd.DataFrame(new_cols, index=base_df.index)], axis=1)
 
-    close = result["close"]
-    high = result["high"]
-    low = result["low"]
-    log_ret = log_return(close)
-    log_price = np.log(close)
 
-    result["log_return"] = log_ret
-    result["log_price"] = log_price
+def features_parquet_path(root: Path, symbol: str, interval: str) -> Path:
+    """Caminho padrão do parquet de features gerado pelo script 03."""
+    return root / "data" / "features" / f"{symbol}_{interval}_features.parquet"
 
-    # RSI
-    for w in feat_cfg["rsi_windows"]:
-        result[f"rsi_{w}"] = rsi(close, window=w)
 
-    # Estocástico
-    for w in feat_cfg["stochastic_windows"]:
-        k, d = stochastic(high, low, close, k_window=w)
-        result[f"stoch_k_{w}"] = k
-        result[f"stoch_d_{w}"] = d
+def _validate_feature_columns(df: pd.DataFrame) -> None:
+    missing = [c for c in _REQUIRED_FEATURE_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Features incompletas — colunas ausentes: {missing}")
 
-    # Bandas de Bollinger
-    for w in feat_cfg["bollinger_windows"]:
-        for k in feat_cfg["bollinger_k"]:
-            k_str = str(k).replace(".", "")
-            upper, mid, lower = bollinger_bands(close, window=w, k=k)
-            result[f"bb_upper_{w}_{k_str}"] = upper
-            result[f"bb_mid_{w}"] = mid
-            result[f"bb_lower_{w}_{k_str}"] = lower
-            result[f"bb_pct_{w}_{k_str}"] = (close - lower) / (upper - lower).replace(0, np.nan)
 
-    # Bandas de regressão
-    for w in feat_cfg["regression_windows"]:
-        for k in feat_cfg["regression_k"]:
-            k_str = str(k).replace(".", "")
-            upper, fitted, lower = regression_bands(log_price, window=w, k=k)
-            result[f"reg_upper_{w}_{k_str}"] = upper
-            result[f"reg_fitted_{w}"] = fitted
-            result[f"reg_lower_{w}_{k_str}"] = lower
+def load_or_compute_features(
+    df: pd.DataFrame,
+    cfg: dict,
+    features_path: Path | None = None,
+    *,
+    force_compute: bool = False,
+    strategy_names: list[str] | None = None,
+) -> pd.DataFrame:
+    """Carrega features do parquet ou calcula se ausente.
 
-    # Bandas de resíduos de retorno
-    for w in feat_cfg["regression_windows"]:
-        for k in feat_cfg["regression_k"]:
-            k_str = str(k).replace(".", "")
-            upper, residual, lower = return_residual_bands(log_ret, window=w, k=k)
-            result[f"resid_upper_{w}_{k_str}"] = upper
-            result[f"resid_{w}"] = residual
-            result[f"resid_lower_{w}_{k_str}"] = lower
+    Parameters
+    ----------
+    df:
+        DataFrame processado (OHLCV). Usado apenas se o parquet não existir
+        ou ``force_compute=True``.
+    features_path:
+        Caminho do parquet. Se None ou inexistente (sem force), calcula via
+        ``compute_all_features``.
+    force_compute:
+        Se True, ignora parquet e recalcula features.
+    """
+    if not force_compute and features_path is not None and features_path.exists():
+        logger.info("Carregando features de parquet: %s", features_path.name)
+        df_feat = pd.read_parquet(features_path)
+        _validate_feature_columns(df_feat)
+        return df_feat
 
-    # Indicador de confluência
-    bb_k_list = feat_cfg["bollinger_k"]
-    bb_k_default = bb_k_list[1] if len(bb_k_list) > 1 else bb_k_list[0]
-    result["technical_confluence_score"] = technical_confluence_score(
-        close, high, low,
-        rsi_window=feat_cfg["rsi_windows"][0],
-        stoch_window=feat_cfg["stochastic_windows"][0],
-        bb_window=feat_cfg["bollinger_windows"][0],
-        bb_k=bb_k_default,
-    )
+    if features_path is not None and not features_path.exists():
+        logger.warning(
+            "Parquet de features não encontrado (%s). Recalculando — "
+            "rode 'python scripts/03_run_features.py' para cachear.",
+            features_path.name,
+        )
 
-    return result
+    logger.info("Calculando features (parquet ausente ou --force-features).")
+    return compute_all_features(df, cfg, strategy_names=strategy_names)

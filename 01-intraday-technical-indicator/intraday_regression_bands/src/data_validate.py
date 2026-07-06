@@ -102,7 +102,8 @@ def _count_temporal_gaps(df: pd.DataFrame, interval: str) -> int:
 
     ts = df["timestamp"].sort_values().reset_index(drop=True)
     diffs = ts.diff().dropna()
-    gaps = (diffs > expected_ms * 2).sum()
+    threshold = pd.Timedelta(milliseconds=expected_ms * 2)
+    gaps = (diffs > threshold).sum()
     return int(gaps)
 
 

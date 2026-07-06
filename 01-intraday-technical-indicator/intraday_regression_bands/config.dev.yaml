@@ -1,0 +1,64 @@
+# Config rápido para smoke tests (~210 dias, BTC 15m).
+# Uso: python scripts/NN_*.py --config config.dev.yaml
+#
+# raw/processed em pastas _dev para não sobrescrever o dataset completo.
+# Features/backtests/results ainda vão para data/features, data/backtests e
+# results/ — ao rodar dev, sobrescreve arquivos de BTCUSDT 15m nesses paths.
+
+project:
+  name: "intraday_regression_bands_dev"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT"]
+  intervals: ["15m"]
+  start_date: "2023-01-01"
+  end_date: "2023-03-31"
+  raw_dir: "data/raw/binance_dev"
+  processed_dir: "data/processed"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0,2,5,10]
+  slippage_bps_per_side: [0,2,5,10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [10, 15, 20, 50]
+  bollinger_k: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+  regression_windows: [10, 15, 20, 50, 100]
+  regression_k: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
+strategies:
+  - bollinger
+  - regression_bands
+  - return_residuals
+  - random
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [0.8, 0.9]
+  entry_short_z: [0.8, 0.9]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  train_days: 21
+  validation_days: 7
+  test_days: 1
+  step_days: 1
+  close_position_end_of_day: true
+  selection_metric: "net_sharpe"
+  parallel_workers: 16
+
+random_baseline:
+  n_seeds: 100
+  seed_base: 14054
+  trade_prob: 0.05

@@ -125,7 +125,7 @@ def generate_markdown_report(
         "| rsi | RSI com limiares de sobrecompra/sobrevenda |",
         "| stochastic | Estocástico %K com limiares |",
         "| technical_confluence | Score de confluência técnica composto (RSI + Estoc. + Bollinger) |",
-        "| random | Baseline aleatório com mesma frequência de trades |",
+        "| random | Placebo multi-seed: trading direcional aleatório (taxa fixa por candle) |",
         "",
     ]
 
@@ -153,7 +153,7 @@ def generate_markdown_report(
 
     # Comparação com random
     if not df_metrics.empty and "strategy" in df_metrics.columns:
-        lines += ["## 5. Comparação com Estratégia Aleatória (Baseline)", ""]
+        lines += ["## 5. Comparação com Placebo Aleatório Multi-Seed", ""]
         random_metrics = df_metrics[df_metrics["strategy"] == "random"]
         other_metrics = df_metrics[df_metrics["strategy"] != "random"]
 
@@ -197,6 +197,7 @@ def generate_markdown_report(
         "performance_summary.csv",
         "performance_by_symbol_interval.csv",
         "walk_forward_results.csv",
+        "walk_forward_oos_summary.csv",
         "best_parameters_by_window.csv",
     ]
     for tname in table_files:

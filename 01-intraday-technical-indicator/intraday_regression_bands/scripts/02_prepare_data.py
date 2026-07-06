@@ -15,10 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import load_config
+from src.config import load_config, get_project_root
 from src.data_prepare import prepare_all
 from src.data_validate import validate_parquet_file, print_validation_report
-from src.utils import setup_logger, get_project_root
+from src.utils import setup_logger
 
 logger = setup_logger("02_prepare_data")
 

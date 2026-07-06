@@ -122,21 +122,88 @@ def turnover(positions: pd.Series) -> float:
     return float(changes.sum() / max(len(positions), 1))
 
 
-def break_even_cost_bps(returns: pd.Series, positions: pd.Series, interval: str) -> float:
-    """Custo por lado (em bps) que zeraria o Sharpe da estratégia."""
-    n_trades = (positions.diff().abs() > 0).sum()
-    if n_trades == 0:
-        return np.nan
-    ann_ret = annualized_return(returns, interval)
-    factor = _annualization_factor(interval)
-    # custo total = custo_por_trade × n_trades / n_candles × factor × 10000
-    n = len(returns)
-    if n == 0:
-        return np.nan
-    cost_per_bps = (n_trades / n) * factor / 10_000
-    if cost_per_bps == 0:
-        return np.nan
-    return float(ann_ret / cost_per_bps)
+def _position_change_units(positions: pd.Series) -> float:
+    """Soma de |Δposição| — unidades sobre as quais o backtest cobra custo."""
+    return float(positions.diff().abs().fillna(0).sum())
+
+
+SELECTION_METRICS = frozenset({"net_sharpe", "net_total_return", "net_profit_factor"})
+
+
+def selection_metric_score(
+    returns: pd.Series,
+    trades: pd.DataFrame,
+    interval: str,
+    metric: str,
+    *,
+    index_mask: pd.Series | None = None,
+) -> float:
+    """Calcula métrica de seleção walk-forward no subperíodo indicado.
+
+    Métricas suportadas:
+      - net_sharpe: Sharpe anualizado dos retornos líquidos
+      - net_total_return: retorno total composto no período
+      - net_profit_factor: soma de ganhos / soma de perdas (retornos por barra)
+    """
+    if metric not in SELECTION_METRICS:
+        raise ValueError(
+            f"Métrica de seleção desconhecida: '{metric}'. "
+            f"Suportadas: {sorted(SELECTION_METRICS)}"
+        )
+
+    if index_mask is not None:
+        period_returns = returns.loc[index_mask]
+    else:
+        period_returns = returns
+
+    if len(period_returns) < 2:
+        return -np.inf
+
+    if metric == "net_sharpe":
+        return sharpe_ratio(period_returns, interval)
+
+    if metric == "net_total_return":
+        return float(np.exp(period_returns.fillna(0).sum()) - 1.0)
+
+    # net_profit_factor — baseado em retornos líquidos por barra
+    gains = period_returns[period_returns > 0].sum()
+    losses = abs(period_returns[period_returns < 0].sum())
+    if losses == 0:
+        return np.inf if gains > 0 else -np.inf
+    return float(gains / losses)
+
+
+def break_even_total_return_bps(
+    gross_returns: pd.Series,
+    positions: pd.Series,
+) -> float:
+    """Custo combinado (fee + slippage) por lado que zera o lucro acumulado.
+
+    Usa retorno bruto (sem custos) e turnover total:
+        custo_bar = |Δposição| × (fee_bps + slippage_bps) / 10_000
+
+    Retorna o valor de (fee_bps + slippage_bps) por lado necessário para
+    exp(sum(retornos_brutos)) - 1 = 0.
+    """
+    gross_log = float(gross_returns.fillna(0).sum())
+    if gross_log <= 0:
+        return 0.0
+
+    change_units = _position_change_units(positions)
+    if change_units == 0:
+        return np.nan  # convenção: sem turnover, BETC indefinido
+
+    return float(gross_log * 10_000 / change_units)
+
+
+def break_even_cost_bps(
+    gross_returns: pd.Series,
+    positions: pd.Series,
+    interval: str | None = None,
+) -> float:
+    """Alias de break_even_total_return_bps (CBE por turnover, não anualizado)."""
+    _ = interval  # mantido por compatibilidade de assinatura
+    return break_even_total_return_bps(gross_returns, positions)
 
 
 def compute_metrics(
@@ -149,9 +216,11 @@ def compute_metrics(
     symbol: str = "",
     fee_bps: float = 0.0,
     slippage_bps: float = 0.0,
+    gross_returns: pd.Series | None = None,
 ) -> dict:
     """Calcula todas as métricas de performance de um backtest."""
     trades_with_ret = _compute_trade_returns(trades)
+    gross = returns if gross_returns is None else gross_returns
 
     metrics = {
         "strategy": strategy_name,
@@ -182,7 +251,8 @@ def compute_metrics(
         "exposure_time": exposure_time(positions),
         "average_holding_time": average_holding_time(trades_with_ret),
         "turnover": turnover(positions),
-        "break_even_cost_bps": break_even_cost_bps(returns, positions, interval),
+        "break_even_cost_bps": break_even_cost_bps(gross, positions, interval),
+        "break_even_total_return_bps": break_even_total_return_bps(gross, positions),
     }
     return metrics
 

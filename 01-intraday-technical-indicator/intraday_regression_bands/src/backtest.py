@@ -1,13 +1,17 @@
 """Motor de backtest causal para estratégias intradiárias.
 
-Regras de execução:
-  - Sinal calculado no candle t
-  - Execução no open do candle t+1
-  - Posição: -1 (short), 0 (neutro), +1 (long)
-  - Custos e slippage aplicados por lado
+Execução next_open (único modo suportado):
+  - Sinal calculado no candle t (estratégias entregam posição desejada já deslocada)
+  - Entrada/saída no open do candle t
+  - Retorno bruto bar-a-bar: posição vigente × ln(open_t / open_{t-1})
+  - Long: ln(exit_open / entry_open); short: ln(entry_open / exit_open)
 
-Fórmula de retorno:
-  strategy_return_t = position_{t-1} × log_return_t − cost_t − slippage_t
+Fechamento EOD:
+  - No último candle UTC do dia, força flat no open desse candle
+  - Não carrega posição para o dia seguinte
+
+Custos:
+  - Fee + slippage por lado, proporcional a |Δposição|
 """
 
 from __future__ import annotations
@@ -50,6 +54,7 @@ class BacktestResult:
     returns: pd.Series
     positions: pd.Series
     trades: pd.DataFrame
+    gross_returns: pd.Series
     metrics: dict = field(default_factory=dict)
 
 
@@ -63,20 +68,20 @@ def run_backtest(
     signal: pd.Series,
     cfg_bt: BacktestConfig,
 ) -> BacktestResult:
-    """Executa backtest completo para uma série de sinais.
+    """Executa backtest com execução next_open em preços de abertura.
 
     Parameters
     ----------
-    df     : DataFrame com colunas 'timestamp', 'open', 'close', 'log_return'.
-    signal : Série com posição desejada no candle t (já deslocada 1 período).
+    df     : DataFrame com colunas 'timestamp', 'open' (e opcionalmente 'close').
+    signal : Série com posição desejada no open do candle t (já deslocada 1 barra).
     cfg_bt : Configuração do backtest.
     """
     _validate_inputs(df, signal)
 
-    log_ret = df["log_return"].values
+    opens = df["open"].values.astype(float)
+    open_log_ret = _open_log_returns(opens)
     pos_desired = signal.values.copy()
 
-    # Clipar posição ao máximo permitido
     pos_desired = np.clip(pos_desired, -cfg_bt.max_position, cfg_bt.max_position)
     if not cfg_bt.allow_short:
         pos_desired = np.clip(pos_desired, 0, cfg_bt.max_position)
@@ -84,11 +89,14 @@ def run_backtest(
     n = len(df)
     position = np.zeros(n)
     strategy_ret = np.zeros(n)
+    gross_ret = np.zeros(n)
     holding_bars = 0
 
     fee_rate = cfg_bt.fee_bps / 10_000.0
     slip_rate = cfg_bt.slippage_bps / 10_000.0
-    total_cost_rate = (fee_rate + slip_rate) * 2  # 2 lados
+    per_side_rate = fee_rate + slip_rate
+
+    utc_dates = _utc_dates(df["timestamp"]) if cfg_bt.close_eod else None
 
     trade_records: list[dict] = []
     entry_price = np.nan
@@ -98,35 +106,38 @@ def run_backtest(
         prev_pos = position[t - 1]
         new_pos = pos_desired[t]
 
-        # Fechar posição por limite de holding
         if cfg_bt.max_holding_bars and holding_bars >= cfg_bt.max_holding_bars:
             new_pos = 0.0
 
-        # Detectar mudança de posição
+        # EOD: fecha no open do último candle UTC do dia (não no open do dia seguinte).
+        if cfg_bt.close_eod and utc_dates is not None and _is_last_bar_of_utc_day(t, n, utc_dates):
+            new_pos = 0.0
+
         changed = new_pos != prev_pos
         cost_this_bar = 0.0
 
         if changed:
-            # Custo proporcional ao tamanho do trade
             trade_size = abs(new_pos - prev_pos)
-            cost_this_bar = trade_size * total_cost_rate
+            cost_this_bar = trade_size * per_side_rate
 
-            # Registrar trade
             if prev_pos != 0:
+                exit_price = opens[t]
+                side = "long" if prev_pos > 0 else "short"
                 trade_records.append({
                     "entry_bar": entry_bar,
                     "exit_bar": t,
                     "entry_price": entry_price,
-                    "exit_price": df["open"].iloc[t] if "open" in df.columns else np.nan,
-                    "side": "long" if prev_pos > 0 else "short",
+                    "exit_price": exit_price,
+                    "side": side,
                     "position": prev_pos,
                     "holding_bars": t - entry_bar,
                     "cost_bps": cfg_bt.fee_bps,
                     "slippage_bps": cfg_bt.slippage_bps,
+                    "trade_return": _trade_log_return(entry_price, exit_price, side),
                 })
 
             if new_pos != 0:
-                entry_price = df["open"].iloc[t] if "open" in df.columns else np.nan
+                entry_price = opens[t]
                 entry_bar = t
                 holding_bars = 0
         else:
@@ -134,15 +145,18 @@ def run_backtest(
 
         position[t] = new_pos
 
-        ret = prev_pos * log_ret[t] if not np.isnan(log_ret[t]) else 0.0
-        strategy_ret[t] = ret - cost_this_bar
+        # Retorno open→open da posição vigente ao entrar no candle t.
+        bar_log_ret = open_log_ret[t]
+        price_ret = prev_pos * bar_log_ret if not np.isnan(bar_log_ret) else 0.0
+        gross_ret[t] = price_ret
+        strategy_ret[t] = price_ret - cost_this_bar
 
-    # Equity curve
     equity = _build_equity(strategy_ret, cfg_bt.initial_capital)
 
     timestamps = df["timestamp"] if "timestamp" in df.columns else df.index
     eq_series = pd.Series(equity, index=timestamps, name="equity")
     ret_series = pd.Series(strategy_ret, index=timestamps, name="strategy_return")
+    gross_series = pd.Series(gross_ret, index=timestamps, name="gross_return")
     pos_series = pd.Series(position, index=timestamps, name="position")
 
     trades_df = pd.DataFrame(trade_records)
@@ -156,7 +170,44 @@ def run_backtest(
         returns=ret_series,
         positions=pos_series,
         trades=trades_df,
+        gross_returns=gross_series,
     )
+
+
+def _open_log_returns(opens: np.ndarray) -> np.ndarray:
+    """ln(open_t / open_{t-1}); índice 0 = 0."""
+    out = np.zeros(len(opens))
+    if len(opens) < 2:
+        return out
+    ratio = opens[1:] / opens[:-1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out[1:] = np.log(ratio)
+    out[~np.isfinite(out)] = np.nan
+    return out
+
+
+def _trade_log_return(entry_price: float, exit_price: float, side: str) -> float:
+    """Retorno logarítmico do trade com preços open de entrada/saída."""
+    if not np.isfinite(entry_price) or not np.isfinite(exit_price):
+        return np.nan
+    if entry_price <= 0 or exit_price <= 0:
+        return np.nan
+    if side == "long":
+        return float(np.log(exit_price / entry_price))
+    return float(np.log(entry_price / exit_price))
+
+
+def _utc_dates(timestamps: pd.Series) -> np.ndarray:
+    """Normaliza timestamps para datas UTC (numpy datetime64[D])."""
+    ts = pd.to_datetime(timestamps, utc=True)
+    return ts.dt.normalize().values.astype("datetime64[D]")
+
+
+def _is_last_bar_of_utc_day(t: int, n: int, utc_dates: np.ndarray) -> bool:
+    """True se o candle t é o último do dia UTC."""
+    if t == n - 1:
+        return True
+    return utc_dates[t] != utc_dates[t + 1]
 
 
 def _build_equity(returns: np.ndarray, initial: float) -> np.ndarray:
@@ -170,8 +221,8 @@ def _validate_inputs(df: pd.DataFrame, signal: pd.Series) -> None:
         raise ValueError(
             f"DataFrame ({len(df)} linhas) e signal ({len(signal)} linhas) têm tamanhos diferentes."
         )
-    if "log_return" not in df.columns:
-        raise KeyError("Coluna 'log_return' ausente no DataFrame.")
+    if "open" not in df.columns:
+        raise KeyError("Coluna 'open' ausente no DataFrame (obrigatória para next_open).")
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +242,6 @@ def save_backtest_results(
     prefix = f"{cfg.strategy_name}_{cfg.symbol}_{cfg.interval}"
     fee_tag = f"fee{int(cfg.fee_bps)}_slip{int(cfg.slippage_bps)}"
 
-    # Equity parquet
     equity_df = pd.DataFrame({
         "timestamp": result.equity.index,
         "equity": result.equity.values,
@@ -201,7 +251,6 @@ def save_backtest_results(
     equity_path = backtests_dir / f"equity_{prefix}_{fee_tag}.parquet"
     equity_df.to_parquet(equity_path, index=False, compression="snappy")
 
-    # Trades CSV
     trades_path = backtests_dir / f"trades_{prefix}_{fee_tag}.csv"
     result.trades.to_csv(trades_path, index=False)
 

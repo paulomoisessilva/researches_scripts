@@ -14,7 +14,7 @@ Comparar estratégias intradiárias baseadas em:
 - RSI (Índice de Força Relativa)
 - Estocástico
 - Indicador de confluência técnica composto
-- Estratégia aleatória (baseline)
+- Estratégia aleatória multi-seed (placebo)
 
 Sobre os ativos `BTCUSDT` e `ETHUSDT` nas frequências `1m`, `5m` e `15m`.
 
@@ -132,6 +132,23 @@ Custos testados: 0, 2, 5, 10 bps por lado.
 - Teste: 60 dias
 - Passo: 60 dias
 - Seleção por Sharpe líquido no período de validação
+
+### Baseline aleatório multi-seed (placebo)
+
+O walk-forward inclui uma estratégia `random` usada como **placebo**: trading direcional aleatório (long/short 50/50) com taxa fixa de eventos por candle (`random_baseline.trade_prob`). Não é otimizada na validação.
+
+Com `random_baseline.n_seeds` (ex.: 100), o pipeline gera uma **distribuição** de resultados OOS — um caminho por seed — e resume percentis em `walk_forward_random_seed_distribution.csv`. Isso permite verificar se o desempenho das estratégias reais excede o que seria esperado por acaso direcional.
+
+Configuração:
+
+```yaml
+random_baseline:
+  n_seeds: 100
+  seed_base: 0
+  trade_prob: 0.05
+```
+
+Comparações do paper: Bollinger, Regression Bands, Return Residual Bands, buy-and-hold BTC e placebo aleatório multi-seed.
 
 ---
 

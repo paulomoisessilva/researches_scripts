@@ -72,11 +72,20 @@ def sample_config() -> dict:
             "regression_windows": [50],
             "regression_k": [2.0],
         },
+        "strategy": {
+            "entry_mode": "reversal_confirmed",
+            "entry_long_z": [0.8],
+            "entry_short_z": [0.8],
+            "exit_long_z": [0.0],
+            "exit_short_z": [0.0],
+            "allow_pyramiding": False,
+        },
         "walk_forward": {
             "train_days": 10,
             "validation_days": 5,
             "test_days": 5,
             "step_days": 5,
             "selection_metric": "net_sharpe",
+            "parallel_workers": 1,
         },
     }

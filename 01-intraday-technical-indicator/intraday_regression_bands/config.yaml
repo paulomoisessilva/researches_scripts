@@ -26,13 +26,35 @@ features:
   rsi_windows: [14, 21]
   stochastic_windows: [14, 21]
   bollinger_windows: [20, 50, 100]
-  bollinger_k: [1.5, 2.0, 2.5]
-  regression_windows: [50, 100, 200]
-  regression_k: [1.5, 2.0, 2.5]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5]
+  regression_windows: [50, 100, 150, 200]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5]
+
+# Estratégias executadas nos scripts 04 e 05 (--strategies na CLI sobrescreve)
+strategies:
+  - bollinger
+  - regression_bands
+  - return_residuals
+  - random
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [0.7, 0.8, 0.9, 1.0]
+  entry_short_z: [0.7, 0.8, 0.9, 1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
 
 walk_forward:
-  train_days: 180
-  validation_days: 60
-  test_days: 60
-  step_days: 60
+  train_days: 60
+  validation_days: 14
+  test_days: 14
+  step_days: 14
   selection_metric: "net_sharpe"
+  parallel_workers: 8
+
+# Baseline aleatório multi-seed (walk-forward): placebo para comparar com estratégias reais
+random_baseline:
+  n_seeds: 100
+  seed_base: 0
+  trade_prob: 0.05
