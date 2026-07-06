@@ -1,2 +1,5 @@
 .specstory/**
 .cursor*
+
+**/papers/**
+.vscode/**
