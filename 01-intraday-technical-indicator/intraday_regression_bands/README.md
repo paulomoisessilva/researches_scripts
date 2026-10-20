@@ -97,7 +97,9 @@ Cada combinação janela de treino × cenário de custo é uma *run* com pasta p
 codifica janelas, custo e período, ex.: `tr21_va7_te1_st1_fee2_slip2_20210101-20251231_oos20210301`.
 
 - `--costs 2:2 5:5` — cenários fee:slippage (bps por lado); sem isso usa o primeiro de `study.cost_scenarios`.
-- `--train-days 14 21 42` — uma run por janela de treino. `--study` usa `study.*` do config.
+  O custo da run é o da **seleção** de parâmetros; a sensibilidade a custo é lida no custo de break-even
+  (CBE, `script 07`), então o estudo do paper roda um único custo (2+2 bps).
+- `--train-days 14 21 42` — uma run por janela de treino. `--study` usa `study.*` do config (3 runs no `config.paper.yaml`).
 - `--fresh` apaga a run antes; sem ele a execução retoma/mescla. Trocar o grid ou as janelas numa pasta
   existente é recusado (impressão digital do config em `run_meta.json`).
 - `walk_forward.oos_start` fixa o primeiro dia de teste, então todas as janelas de treino avaliam o **mesmo** período OOS.

@@ -56,10 +56,10 @@ class TestCostScenarios:
         cfg = _paper_cfg()
         assert resolve_cost_scenarios(cfg) == [(2.0, 2.0)]
 
-    def test_study_returns_all(self):
+    def test_study_uses_single_selection_cost(self):
+        # A sensibilidade a custo vem do CBE; o estudo varia só a janela de treino.
         cfg = _paper_cfg()
-        got = resolve_cost_scenarios(cfg, study=True)
-        assert got[0] == (2.0, 2.0) and len(got) == 4
+        assert resolve_cost_scenarios(cfg, study=True) == [(2.0, 2.0)]
 
     def test_cli_overrides(self):
         cfg = _paper_cfg()

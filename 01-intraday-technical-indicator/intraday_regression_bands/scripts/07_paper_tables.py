@@ -5,9 +5,15 @@ Gera em ``results/paper/``:
   oos_by_period_all_runs.csv   estratégias reais por ano (+ ALL), com posição frente ao random
   random_by_period_all_runs.csv distribuição do baseline aleatório entre seeds, por ano (+ ALL)
   sharpe_by_year_primary.csv   Sharpe estratégia x ano da run primária
+  cbe_by_year_primary.csv      custo de break-even (bps/lado) estratégia x ano da run primária
+  cbe_vs_random_primary.csv    Sharpe e CBE da estratégia frente ao placebo, por ano
   train_window_comparison.csv  Sharpe OOS (ALL) por janela de treino, no custo primário
-  cost_sensitivity.csv         Sharpe OOS (ALL) por cenário de custo, na janela primária
+  train_window_comparison_cbe.csv  CBE OOS (ALL) por janela de treino
+  cost_sensitivity.csv         Sharpe OOS (ALL) por cenário de custo (só com >1 custo rodado)
   paper_tables.md              as tabelas acima em Markdown
+
+O CBE (retorno bruto / turnover, em bps por lado) resume a sensibilidade a custo: para
+posições fixas o retorno líquido é linear no custo, então não é preciso varrer cenários.
 
 A run primária é a de ``walk_forward.train_days`` do config e do primeiro cenário de
 ``study.cost_scenarios`` (ou use --train-days/--costs).
@@ -95,9 +101,37 @@ def main() -> None:
                 (dist["train_days"] == primary_train)
                 & (dist["fee_bps"] == primary_fee)
                 & (dist["slippage_bps"] == primary_slip)
-            ].set_index("period")[["n_seeds", "sharpe_p05", "sharpe_p50", "sharpe_p95"]]
+            ].set_index("period")[[
+                "n_seeds", "sharpe_p05", "sharpe_p50", "sharpe_p95",
+                "break_even_bps_p05", "break_even_bps_p50", "break_even_bps_p95",
+            ]]
             rnd = rnd.loc[[p for p in rnd.index if p != ALL_PERIOD] + ([ALL_PERIOD] if ALL_PERIOD in rnd.index else [])]
-            md += ["### Placebo `random` (Sharpe entre seeds)\n", to_markdown(rnd), ""]
+            md += ["### Placebo `random` (entre seeds; CBE em bps por lado)\n", to_markdown(rnd), ""]
+
+    cbe_by_year = sharpe_pivot(real, values="break_even_bps", filters=primary)
+    if not cbe_by_year.empty:
+        cbe_by_year.to_csv(out_dir / "cbe_by_year_primary.csv")
+        md += [
+            "## Custo de break-even por ano (bps por lado que zeram o retorno)\n",
+            to_markdown(cbe_by_year),
+            "",
+        ]
+
+    vs_random_cols = [
+        "strategy", "period", "sharpe", "random_sharpe_p50", "pct_random_below_sharpe",
+        "break_even_bps", "random_cbe_p50", "random_cbe_p95", "pct_random_below_cbe",
+    ]
+    prim_rows = real
+    for col, val in primary.items():
+        prim_rows = prim_rows[prim_rows[col] == val]
+    if "pct_random_below_cbe" in prim_rows.columns and not prim_rows.empty:
+        vs_random = prim_rows[vs_random_cols].sort_values(["strategy", "period"])
+        vs_random.to_csv(out_dir / "cbe_vs_random_primary.csv", index=False)
+        md += [
+            "## Estratégias frente ao placebo (fração de seeds abaixo da estratégia)\n",
+            to_markdown(vs_random.set_index(["strategy", "period"]), floatfmt="{:.3f}"),
+            "",
+        ]
 
     all_period = real[real["period"] == ALL_PERIOD]
 
@@ -114,7 +148,23 @@ def main() -> None:
             "",
         ]
 
+    windows_cbe = sharpe_pivot(
+        all_period,
+        columns="train_days",
+        values="break_even_bps",
+        filters={"fee_bps": primary_fee, "slippage_bps": primary_slip},
+    )
+    if not windows_cbe.empty:
+        windows_cbe.to_csv(out_dir / "train_window_comparison_cbe.csv")
+        md += [
+            "## CBE OOS por janela de treino (dias, bps por lado)\n",
+            to_markdown(windows_cbe),
+            "",
+        ]
+
     cost_cmp = all_period[all_period["train_days"] == primary_train].copy()
+    if cost_cmp[["fee_bps", "slippage_bps"]].drop_duplicates().shape[0] < 2:
+        cost_cmp = cost_cmp.iloc[0:0]  # um único custo: o CBE já resume a sensibilidade
     if not cost_cmp.empty:
         cost_cmp["custo_por_lado_bps"] = cost_cmp["fee_bps"] + cost_cmp["slippage_bps"]
         cost_pv = cost_cmp.pivot_table(

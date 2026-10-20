@@ -8,7 +8,9 @@ from src.metrics import sharpe_ratio
 from src.walk_forward import WFResult, save_walk_forward_results, window_moments
 from src.wf_analysis import (
     ALL_PERIOD,
+    collect_runs,
     metrics_from_moments,
+    percentile_rank,
     run_tables,
     sharpe_from_moments,
     sharpe_pivot,
@@ -193,3 +195,36 @@ class TestWindowParallelism:
             assert a.window_id == b.window_id
             assert a.best_params == b.best_params
             pd.testing.assert_series_equal(a.test_returns, b.test_returns)
+
+
+class TestCbeVsRandom:
+    def test_percentile_rank_counts_ties_as_half(self):
+        sample = pd.Series([0.0, 0.0, 0.0, 2.0])
+        assert percentile_rank(sample, 0.0) == pytest.approx(0.375)  # (0 + 0.5*3) / 4
+        assert percentile_rank(sample, 5.0) == 1.0
+        assert percentile_rank(sample, -1.0) == 0.0
+        assert np.isnan(percentile_rank(sample, float("nan")))
+
+    def test_real_table_has_cbe_columns(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        real, dist = run_tables(df)
+        for col in ("random_cbe_p05", "random_cbe_p50", "random_cbe_p95", "pct_random_below_cbe"):
+            assert col in real.columns
+        assert "break_even_bps_p50" in dist.columns
+        pct = real["pct_random_below_cbe"].dropna()
+        assert ((pct >= 0) & (pct <= 1)).all()
+
+    def test_collect_runs_annotates_meta(self, tmp_path):
+        import json
+
+        run = tmp_path / "run_a"
+        run.mkdir()
+        _fake_run(run)
+        (run / "run_meta.json").write_text(json.dumps({
+            "run_id": "run_a", "train_days": 21, "validation_days": 7, "test_days": 1,
+            "step_days": 1, "fee_bps": 2.0, "slippage_bps": 2.0,
+        }))
+        real, dist = collect_runs([run])
+        assert set(real["train_days"]) == {21} and set(dist["fee_bps"]) == {2.0}
+        assert real.columns[0] == "run_id"

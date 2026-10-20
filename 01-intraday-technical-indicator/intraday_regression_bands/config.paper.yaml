@@ -70,15 +70,16 @@ walk_forward:
   # 100 seeds x ~1800 janelas geram dezenas de milhões de linhas de equity por run.
   save_random_equity: false
 
-# Estudo de robustez (--study): comprimento da janela de treino x custo por lado.
+# Estudo de robustez (--study): comprimento da janela de treino.
 study:
   train_days: [14, 21, 42]
-  # [fee_bps, slippage_bps] por lado. O PRIMEIRO é o cenário primário (run sem --study).
+  # [fee_bps, slippage_bps] por lado usados na SELEÇÃO de parâmetros (net_sharpe na
+  # validação) e nas métricas líquidas. A sensibilidade a custo é reportada pelo
+  # custo de break-even (CBE), não por uma varredura de cenários: para posições
+  # fixas o retorno líquido é linear no custo. Para varrer custos mesmo assim,
+  # liste mais cenários aqui (o PRIMEIRO é o da run sem --study) ou use --costs.
   cost_scenarios:
     - [2, 2]
-    - [0, 0]
-    - [5, 5]
-    - [10, 10]
 
 random_baseline:
   n_seeds: 100

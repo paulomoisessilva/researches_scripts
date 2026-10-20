@@ -64,6 +64,18 @@ def metrics_from_moments(grp: pd.DataFrame, interval: str) -> dict[str, float]:
     }
 
 
+def percentile_rank(sample: pd.Series, value: float) -> float:
+    """Fração de ``sample`` abaixo de ``value``, com empates contando metade.
+
+    O CBE do baseline aleatório tem muitos zeros (retorno bruto <= 0 vira CBE 0),
+    então um "estritamente menor" subestimaria a posição de quem também está em 0.
+    """
+    vals = pd.Series(sample).astype(float).dropna()
+    if vals.empty or value is None or np.isnan(value):
+        return float("nan")
+    return float(((vals < value).sum() + 0.5 * (vals == value).sum()) / len(vals))
+
+
 def _with_period(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["year"] = pd.to_datetime(out["test_date"]).dt.year.astype("Int64")
@@ -107,8 +119,10 @@ def run_tables(df_windows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     Retorna ``(real, random_dist)``:
       - ``real``: uma linha por (strategy, symbol, interval, period) com as métricas,
-        mais a posição frente ao placebo (``random_sharpe_p05/p50/p95`` e
-        ``pct_random_below_sharpe`` = fração de seeds com Sharpe menor).
+        mais a posição frente ao placebo: ``random_sharpe_p05/p50/p95`` e
+        ``random_cbe_p05/p50/p95`` (distribuição entre seeds) e
+        ``pct_random_below_sharpe`` / ``pct_random_below_cbe`` (fração de seeds
+        abaixo da estratégia, empates contando metade).
       - ``random_dist``: por (symbol, interval, period), distribuição entre seeds.
     """
     df = _with_period(df_windows)
@@ -125,7 +139,7 @@ def run_tables(df_windows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     dist_rows: list[dict] = []
     for (symbol, interval, period), grp in per_seed.groupby([*keys, "period"]):
         row = {"symbol": symbol, "interval": interval, "period": period, "n_seeds": len(grp)}
-        for col in ("sharpe", "total_return", "number_of_trades", "turnover_units"):
+        for col in ("sharpe", "total_return", "break_even_bps", "number_of_trades", "turnover_units"):
             vals = grp[col].astype(float)
             row[f"{col}_mean"] = float(vals.mean())
             for q in (0.05, 0.50, 0.95):
@@ -139,25 +153,32 @@ def run_tables(df_windows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                 *keys, "period", "n_seeds",
                 "sharpe_p05", "sharpe_p50", "sharpe_p95",
                 "total_return_p50", "total_return_p95",
+                "break_even_bps_p05", "break_even_bps_p50", "break_even_bps_p95",
             ]].rename(columns={
                 "sharpe_p05": "random_sharpe_p05",
                 "sharpe_p50": "random_sharpe_p50",
                 "sharpe_p95": "random_sharpe_p95",
                 "total_return_p50": "random_total_return_p50",
                 "total_return_p95": "random_total_return_p95",
+                "break_even_bps_p05": "random_cbe_p05",
+                "break_even_bps_p50": "random_cbe_p50",
+                "break_even_bps_p95": "random_cbe_p95",
             }),
             on=[*keys, "period"],
             how="left",
         )
-        pct = []
+        pct_sharpe: list[float] = []
+        pct_cbe: list[float] = []
         for _, r in merged.iterrows():
             seeds = per_seed[
                 (per_seed["symbol"] == r["symbol"])
                 & (per_seed["interval"] == r["interval"])
                 & (per_seed["period"] == r["period"])
             ]
-            pct.append(float((seeds["sharpe"] < r["sharpe"]).mean()) if len(seeds) else np.nan)
-        merged["pct_random_below_sharpe"] = pct
+            pct_sharpe.append(percentile_rank(seeds["sharpe"], r["sharpe"]))
+            pct_cbe.append(percentile_rank(seeds["break_even_bps"], r["break_even_bps"]))
+        merged["pct_random_below_sharpe"] = pct_sharpe
+        merged["pct_random_below_cbe"] = pct_cbe
         real_tbl = merged
 
     return real_tbl, dist_tbl
