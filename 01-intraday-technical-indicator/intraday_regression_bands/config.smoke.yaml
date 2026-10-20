@@ -1,0 +1,76 @@
+# Teste rápido do pipeline completo (~2 min): mesmos scripts, grid e janelas reduzidos.
+#
+#   python scripts/05_run_walk_forward.py --config config.smoke.yaml --study --fresh
+#   python scripts/07_paper_tables.py --config config.smoke.yaml
+#
+# Saídas isoladas em results/smoke/ (não misturam com as runs do paper). As features
+# são recalculadas em memória (período filtrado), então o cache de 5 anos não é tocado.
+# Para testar mais ativos, inclua-os em data.symbols (precisam de data/processed/<SIMBOLO>_15m.parquet).
+
+project:
+  name: "intraday_regression_bands_smoke"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT"]
+  intervals: ["15m"]
+  start_date: "2021-01-01"
+  end_date: "2021-03-20"
+  raw_dir: "data/raw/binance"
+  processed_dir: "data/processed"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0, 2, 5, 10]
+  slippage_bps_per_side: [0, 2, 5, 10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [20, 50]
+  bollinger_k: [2.0, 3.0]
+  regression_windows: [50, 100]
+  regression_k: [2.0, 3.0]
+
+strategies:
+  - bollinger
+  - regression_bands
+  - return_residuals
+  - random
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [0.8, 1.0]
+  entry_short_z: [0.8, 1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  train_days: 14
+  validation_days: 7
+  test_days: 1
+  step_days: 1
+  oos_start: "2021-03-01"
+  close_position_end_of_day: true
+  selection_metric: "net_sharpe"
+  selection_engine: "single_pass"
+  parallel_workers: 8
+  save_random_equity: true
+  runs_dir: "results/smoke/walk_forward"
+
+# (train_days não altera a seleção; aqui serve só para exercitar o --study com 2 runs)
+study:
+  train_days: [10, 14]
+  cost_scenarios:
+    - [2, 2]
+
+random_baseline:
+  n_seeds: 10
+  seed_base: 0
+  trade_prob: 0.05

@@ -102,6 +102,11 @@ codifica janelas, custo e período, ex.: `tr21_va7_te1_st1_fee2_slip2_20210101-2
 - `--train-days 14 21 42` — uma run por janela de treino. `--study` usa `study.*` do config (3 runs no `config.paper.yaml`).
 - `--fresh` apaga a run antes; sem ele a execução retoma/mescla. Trocar o grid ou as janelas numa pasta
   existente é recusado (impressão digital do config em `run_meta.json`).
+- `walk_forward.selection_engine`: `sliced` (padrão; refaz o backtest de treino+validação de cada janela) ou
+  `single_pass` (cada combo roda uma vez na série inteira e a pontuação de validação sai de somas acumuladas;
+  cerca de 40× menos CPU). A equivalência entre os dois é medida por
+  `scripts/08_check_engine_equivalence.py`. Empates de pontuação (< 1e-9) vão para o primeiro combo do grid.
+- Só a janela de **validação** entra na pontuação de seleção; `train_days` apenas aquece a estratégia (não altera a escolha).
 - `walk_forward.oos_start` fixa o primeiro dia de teste, então todas as janelas de treino avaliam o **mesmo** período OOS.
 - Sem custo configurado o padrão é fee=0/slippage=0 (resultado bruto); o script avisa.
 

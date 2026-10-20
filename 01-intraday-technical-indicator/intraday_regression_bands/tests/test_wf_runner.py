@@ -164,3 +164,20 @@ class TestValidateGridFeatures:
         cfg = _paper_cfg()
         df = pd.DataFrame({c: [1.0, 2.0] for c in cols})
         validate_grid_features(df, cfg, ["bollinger", "regression_bands", "return_residuals"])
+
+
+class TestDateFilter:
+    def test_end_date_without_time_includes_whole_day(self):
+        from src.config import filter_dataframe_by_date_range
+
+        ts = pd.date_range("2025-12-30", "2025-12-31 23:45", freq="15min", tz="UTC")
+        df = pd.DataFrame({"timestamp": ts})
+        out, reduced = filter_dataframe_by_date_range(df, "2025-12-30", "2025-12-31")
+        assert len(out) == len(df) and not reduced  # 192 barras, inclusive 31/12 23:45
+
+    def test_end_date_with_time_is_exact(self):
+        from src.config import filter_dataframe_by_date_range
+
+        ts = pd.date_range("2025-12-30", "2025-12-31 23:45", freq="15min", tz="UTC")
+        out, reduced = filter_dataframe_by_date_range(pd.DataFrame({"timestamp": ts}), None, "2025-12-31 00:00")
+        assert out["timestamp"].iloc[-1] == pd.Timestamp("2025-12-31 00:00", tz="UTC") and reduced

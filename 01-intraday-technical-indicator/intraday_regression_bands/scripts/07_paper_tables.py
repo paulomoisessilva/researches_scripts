@@ -39,7 +39,7 @@ from src.wf_analysis import (
     sharpe_pivot,
     to_markdown,
 )
-from src.wf_runner import RUNS_SUBDIR, resolve_cost_scenarios, resolve_train_days
+from src.wf_runner import resolve_cost_scenarios, resolve_runs_root, resolve_train_days
 
 logger = setup_logger("07_paper_tables")
 
@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gera tabelas do paper (por ano e por run).")
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--runs-root", type=str, default=None,
-                        help="Pasta com as runs (default: results/walk_forward).")
+                        help="Pasta com as runs (default: walk_forward.runs_dir do config).")
     parser.add_argument("--train-days", type=int, default=None,
                         help="Janela de treino da run primária (default: do config).")
     parser.add_argument("--costs", type=str, default=None, metavar="FEE:SLIP",
@@ -60,8 +60,8 @@ def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
     root = get_project_root()
-    runs_root = Path(args.runs_root) if args.runs_root else root / RUNS_SUBDIR
-    out_dir = root / "results" / "paper"
+    runs_root = Path(args.runs_root) if args.runs_root else resolve_runs_root(cfg)
+    out_dir = runs_root.parent / "paper"  # results/paper (ou results/smoke/paper no smoke)
     ensure_dir(out_dir)
 
     run_dirs = list_runs(runs_root)
@@ -84,6 +84,9 @@ def main() -> None:
         dist.to_csv(out_dir / "random_by_period_all_runs.csv", index=False)
 
     primary = {"train_days": primary_train, "fee_bps": primary_fee, "slippage_bps": primary_slip}
+    multi_asset = real["symbol"].nunique() > 1
+    if multi_asset:
+        logger.info("Multi-ativo: %s", sorted(real["symbol"].unique()))
     md: list[str] = ["# Tabelas do paper (walk-forward OOS)\n"]
 
     by_year = sharpe_pivot(real, filters=primary)
@@ -101,11 +104,13 @@ def main() -> None:
                 (dist["train_days"] == primary_train)
                 & (dist["fee_bps"] == primary_fee)
                 & (dist["slippage_bps"] == primary_slip)
-            ].set_index("period")[[
+            ]
+            rnd = rnd.assign(_all=rnd["period"] == ALL_PERIOD).sort_values(
+                [*(["symbol"] if multi_asset else []), "_all", "period"]
+            ).set_index([*(["symbol"] if multi_asset else []), "period"])[[
                 "n_seeds", "sharpe_p05", "sharpe_p50", "sharpe_p95",
                 "break_even_bps_p05", "break_even_bps_p50", "break_even_bps_p95",
             ]]
-            rnd = rnd.loc[[p for p in rnd.index if p != ALL_PERIOD] + ([ALL_PERIOD] if ALL_PERIOD in rnd.index else [])]
             md += ["### Placebo `random` (entre seeds; CBE em bps por lado)\n", to_markdown(rnd), ""]
 
     cbe_by_year = sharpe_pivot(real, values="break_even_bps", filters=primary)
@@ -117,19 +122,20 @@ def main() -> None:
             "",
         ]
 
+    id_cols = [*(["symbol"] if multi_asset else []), "strategy", "period"]
     vs_random_cols = [
-        "strategy", "period", "sharpe", "random_sharpe_p50", "pct_random_below_sharpe",
+        *id_cols, "sharpe", "random_sharpe_p50", "pct_random_below_sharpe",
         "break_even_bps", "random_cbe_p50", "random_cbe_p95", "pct_random_below_cbe",
     ]
     prim_rows = real
     for col, val in primary.items():
         prim_rows = prim_rows[prim_rows[col] == val]
     if "pct_random_below_cbe" in prim_rows.columns and not prim_rows.empty:
-        vs_random = prim_rows[vs_random_cols].sort_values(["strategy", "period"])
+        vs_random = prim_rows[vs_random_cols].sort_values(id_cols)
         vs_random.to_csv(out_dir / "cbe_vs_random_primary.csv", index=False)
         md += [
             "## Estratégias frente ao placebo (fração de seeds abaixo da estratégia)\n",
-            to_markdown(vs_random.set_index(["strategy", "period"]), floatfmt="{:.3f}"),
+            to_markdown(vs_random.set_index(id_cols), floatfmt="{:.3f}"),
             "",
         ]
 
@@ -168,7 +174,8 @@ def main() -> None:
     if not cost_cmp.empty:
         cost_cmp["custo_por_lado_bps"] = cost_cmp["fee_bps"] + cost_cmp["slippage_bps"]
         cost_pv = cost_cmp.pivot_table(
-            index="strategy", columns="custo_por_lado_bps", values="sharpe", aggfunc="first"
+            index=["symbol", "strategy"] if multi_asset else "strategy",
+            columns="custo_por_lado_bps", values="sharpe", aggfunc="first",
         )
         cost_pv.to_csv(out_dir / "cost_sensitivity.csv")
         md += [

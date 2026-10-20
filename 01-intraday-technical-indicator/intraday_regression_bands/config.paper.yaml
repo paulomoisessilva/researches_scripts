@@ -66,11 +66,17 @@ walk_forward:
   oos_start: "2021-03-01"
   close_position_end_of_day: true
   selection_metric: "net_sharpe"
+  # single_pass: cada combo roda 1x na série inteira e a validação sai de somas acumuladas
+  # (mesmas escolhas do motor "sliced" em 300 janelas reais; ver scripts/08_check_engine_equivalence.py).
+  selection_engine: "single_pass"
   parallel_workers: 8
   # 100 seeds x ~1800 janelas geram dezenas de milhões de linhas de equity por run.
   save_random_equity: false
 
 # Estudo de robustez (--study): comprimento da janela de treino.
+# ATENÇÃO: a seleção de parâmetros pontua só a janela de VALIDAÇÃO; o treino apenas aquece a
+# estratégia e NÃO altera a escolha (verificado: train_days 10 e 14 deram resultados idênticos).
+# Para estudar o lookback de seleção, varie walk_forward.validation_days (decisão pendente).
 study:
   train_days: [14, 21, 42]
   # [fee_bps, slippage_bps] por lado usados na SELEÇÃO de parâmetros (net_sharpe na

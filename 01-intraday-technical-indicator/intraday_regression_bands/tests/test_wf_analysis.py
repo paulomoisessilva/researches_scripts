@@ -228,3 +228,65 @@ class TestCbeVsRandom:
         real, dist = collect_runs([run])
         assert set(real["train_days"]) == {21} and set(dist["fee_bps"]) == {2.0}
         assert real.columns[0] == "run_id"
+
+
+class TestMultiAsset:
+    """Vários ativos na mesma run não podem sobrescrever uns aos outros."""
+
+    def test_save_keeps_rows_of_both_symbols(self, tmp_path):
+        def res(symbol, wid, day):
+            r = _result("bollinger", wid, day, np.random.default_rng(wid).normal(0, 1e-3, 96))
+            r.symbol = symbol
+            r.test_metrics["symbol"] = symbol
+            return r
+
+        # Mesmos window_id/strategy para dois ativos, salvos em chamadas separadas.
+        save_walk_forward_results([res("AAA", 0, "2022-01-01"), res("AAA", 1, "2022-01-02")], tmp_path, tmp_path)
+        save_walk_forward_results([res("BBB", 0, "2022-01-01"), res("BBB", 1, "2022-01-02")], tmp_path, tmp_path)
+
+        wf = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        params = pd.read_csv(tmp_path / "best_parameters_by_window.csv")
+        eq = pd.read_parquet(tmp_path / "walk_forward_equity.parquet")
+        assert len(wf) == 4 and set(wf["symbol"]) == {"AAA", "BBB"}
+        assert len(params) == 4 and set(params["symbol"]) == {"AAA", "BBB"}
+        assert set(eq["symbol"]) == {"AAA", "BBB"}
+
+    def test_resave_replaces_instead_of_duplicating(self, tmp_path):
+        def res(wid, day):
+            return _result("bollinger", wid, day, np.random.default_rng(wid).normal(0, 1e-3, 96))
+
+        batch = [res(0, "2022-01-01"), res(1, "2022-01-02")]
+        save_walk_forward_results(batch, tmp_path, tmp_path)
+        save_walk_forward_results(batch, tmp_path, tmp_path)  # retomada da mesma run
+        assert len(pd.read_csv(tmp_path / "walk_forward_results.csv")) == 2
+
+    def test_run_experiment_two_symbols_end_to_end(self, tmp_path):
+        import json
+
+        from src.wf_runner import run_experiment
+
+        df, df_feat, cfg = TestWindowParallelism._setup()
+        cfg["walk_forward"].update({
+            "runs_dir": str(tmp_path), "oos_start": "2022-01-20", "step_days": 6,
+            "save_random_equity": False, "parallel_workers": 1,
+        })
+        cfg["random_baseline"] = {"n_seeds": 3, "seed_base": 0, "trade_prob": 0.05}
+        cfg["data"] = {"start_date": "2022-01-01", "end_date": "2022-02-09"}
+        inputs = {("AAA", "15m"): (df, df_feat), ("BBB", "15m"): (df, df_feat)}
+
+        run_dir = run_experiment(cfg, inputs, ["bollinger", "random"], 2.0, 2.0, fresh=True)
+        wf = pd.read_csv(run_dir / "walk_forward_results.csv")
+        for symbol in ("AAA", "BBB"):
+            sub = wf[wf["symbol"] == symbol]
+            assert set(sub["strategy"]) == {"bollinger", "random"}
+            assert sub.loc[sub["strategy"] == "random", "seed"].nunique() == 3
+        n_boll = wf[wf["strategy"] == "bollinger"].groupby("symbol").size()
+        assert n_boll["AAA"] == n_boll["BBB"] > 1
+
+        meta = json.loads((run_dir / "run_meta.json").read_text())
+        assert meta["symbols"] == ["AAA", "BBB"]
+
+        real, dist = run_tables(wf)
+        assert set(real["symbol"]) == {"AAA", "BBB"} and set(dist["symbol"]) == {"AAA", "BBB"}
+        pv = sharpe_pivot(real)
+        assert list(pv.index.names) == ["symbol", "strategy"]

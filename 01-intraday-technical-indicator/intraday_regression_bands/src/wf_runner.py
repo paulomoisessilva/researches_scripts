@@ -38,6 +38,12 @@ logger = setup_logger(__name__)
 RUNS_SUBDIR = Path("results") / "walk_forward"
 META_FILENAME = "run_meta.json"
 
+def resolve_runs_root(cfg: dict[str, Any]) -> Path:
+    """Pasta das runs: ``walk_forward.runs_dir`` (relativa à raiz do projeto) ou o padrão."""
+    runs_dir = cfg.get("walk_forward", {}).get("runs_dir")
+    return get_project_root() / (runs_dir or RUNS_SUBDIR)
+
+
 # Seções do config que definem o experimento. Custos ficam de fora (estão no
 # run_id) e ``parallel_workers`` não altera resultados.
 _FINGERPRINT_BACKTEST_KEYS = (
@@ -142,7 +148,10 @@ def make_run_id(
 
 def config_fingerprint(cfg: dict[str, Any]) -> str:
     """Hash das seções que definem o experimento (exclui custos e paralelismo)."""
-    wf = {k: v for k, v in cfg.get("walk_forward", {}).items() if k != "parallel_workers"}
+    wf = {
+        k: v for k, v in cfg.get("walk_forward", {}).items()
+        if k not in ("parallel_workers", "runs_dir")
+    }
     bt = {k: cfg.get("backtest", {}).get(k) for k in _FINGERPRINT_BACKTEST_KEYS}
     payload = {
         "features": cfg.get("features"),
@@ -257,7 +266,7 @@ def run_experiment(
 
     start_date, end_date = resolve_date_range(run_cfg)
     run_id = run_id or make_run_id(run_cfg, fee_bps, slippage_bps, start_date, end_date, tag)
-    run_dir = get_project_root() / RUNS_SUBDIR / run_id
+    run_dir = resolve_runs_root(run_cfg) / run_id
 
     wf_cfg = run_cfg["walk_forward"]
     meta: dict[str, Any] = {

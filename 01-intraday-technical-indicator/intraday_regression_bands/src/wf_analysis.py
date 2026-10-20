@@ -235,7 +235,10 @@ def sharpe_pivot(
         sub = sub[sub[col] == val]
     if sub.empty:
         return pd.DataFrame()
-    pv = sub.pivot_table(index=index, columns=columns, values=values, aggfunc="first")
+    row_index: str | list[str] = index
+    if "symbol" in sub.columns and sub["symbol"].nunique() > 1 and index != "symbol":
+        row_index = ["symbol", index]  # multi-ativo: uma linha por (ativo, estratégia)
+    pv = sub.pivot_table(index=row_index, columns=columns, values=values, aggfunc="first")
     if ALL_PERIOD in pv.columns:
         pv = pv[[c for c in pv.columns if c != ALL_PERIOD] + [ALL_PERIOD]]
     return pv

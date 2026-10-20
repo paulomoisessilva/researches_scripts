@@ -121,7 +121,11 @@ def filter_dataframe_by_date_range(
     if start_date:
         mask &= ts >= pd.Timestamp(start_date, tz=tz)
     if end_date:
-        mask &= ts <= pd.Timestamp(end_date, tz=tz)
+        end_ts = pd.Timestamp(end_date, tz=tz)
+        if len(str(end_date).strip()) <= 10:  # data sem hora: inclui o dia inteiro
+            mask &= ts < end_ts + pd.Timedelta(days=1)
+        else:
+            mask &= ts <= end_ts
     filtered = df.loc[mask].reset_index(drop=True)
     return filtered, len(filtered) < n_before
 

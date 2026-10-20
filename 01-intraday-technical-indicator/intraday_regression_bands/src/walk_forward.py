@@ -42,6 +42,10 @@ from .utils import ensure_dir, setup_logger
 
 logger = setup_logger(__name__)
 
+# Combos cuja pontuação de validação difere menos que isso são empate: vence o primeiro
+# do grid. Sem tolerância, o desempate dependia de ruído de ponto flutuante (~1e-13).
+SELECTION_TIE_TOL = 1e-9
+
 
 # ---------------------------------------------------------------------------
 # Estado compartilhado por workers do grid (ProcessPoolExecutor + initializer)
@@ -239,7 +243,7 @@ def _select_best_from_grid_results(
     for result in results:
         if result is None:
             continue
-        if result.score > best_score:
+        if result.score > best_score + SELECTION_TIE_TOL:
             best_score = result.score
             best_params = result.params
     return best_params, best_score
@@ -459,7 +463,7 @@ def optimize_params_on_validation(
                     bt_cfg_template.interval,
                     selection_metric,
                 )
-                if score > best_score:
+                if score > best_score + SELECTION_TIE_TOL:
                     best_score = score
                     best_params = params
             except Exception as exc:
@@ -543,7 +547,7 @@ def _optimize_band_strategy(
                         selection_metric,
                     )
                     params = {**struct, **thresh}
-                    if score > best_score:
+                    if score > best_score + SELECTION_TIE_TOL:
                         best_score = score
                         best_params = params
                 except Exception as exc:
@@ -793,6 +797,8 @@ class _WindowContext:
     fee_bps: float
     slippage_bps: float
     min_test_bars: int
+    # window_id -> (best_params, val_score) quando a seleção veio do motor de passagem única
+    precomputed: dict[int, tuple[dict, float]] | None = None
 
 
 _BAND_FEATURE_PREFIXES = {
@@ -836,17 +842,20 @@ def _run_one_window(
         logger.warning("[WF %d] Dados insuficientes, janela ignorada.", win.window_id)
         return None
 
-    best_params, val_score = optimize_params_on_validation(
-        df_train_val=df_feat_train_val,
-        strategy_name=ctx.strategy_name,
-        cfg=ctx.cfg,
-        bt_cfg_template=ctx.bt_cfg,
-        val_start=win.val_start,
-        val_end=win.val_end,
-        selection_metric=ctx.selection_metric,
-        df_feat_train_val=df_feat_train_val,
-        n_workers=grid_workers,
-    )
+    if ctx.precomputed is not None:
+        best_params, val_score = ctx.precomputed[win.window_id]
+    else:
+        best_params, val_score = optimize_params_on_validation(
+            df_train_val=df_feat_train_val,
+            strategy_name=ctx.strategy_name,
+            cfg=ctx.cfg,
+            bt_cfg_template=ctx.bt_cfg,
+            val_start=win.val_start,
+            val_end=win.val_end,
+            selection_metric=ctx.selection_metric,
+            df_feat_train_val=df_feat_train_val,
+            n_workers=grid_workers,
+        )
 
     try:
         test_result_full = _run_backtest_on_features(
@@ -966,6 +975,22 @@ def run_walk_forward(
         min_test_bars=1 if wf_cfg.get("test_days", 1) == 1 else 10,
     )
 
+    engine = wf_cfg.get("selection_engine", "sliced")
+    if engine not in ("sliced", "single_pass"):
+        raise ValueError(f"walk_forward.selection_engine inválido: '{engine}' (sliced | single_pass).")
+    if engine == "single_pass" and strategy_name in BAND_STRATEGIES:
+        from .fast_select import fast_select_band_params
+
+        logger.info("Seleção em passagem única (%s, %d janelas).", strategy_name, len(windows))
+        selection = fast_select_band_params(
+            window_ctx.df_feat, strategy_name, cfg, bt_cfg_template, windows,
+            selection_metric, n_workers=workers,
+        )
+        window_ctx.precomputed = {
+            win.window_id: (selection.best_params(i), selection.best_score(i))
+            for i, win in enumerate(windows)
+        }
+
     if workers > 1 and len(windows) > 1:
         # Paraleliza ENTRE janelas (independentes): cada processo faz o grid de uma
         # janela sequencialmente. Subir um pool por janela para o grid custava mais
@@ -1058,28 +1083,31 @@ def aggregate_random_seed_distribution(oos_summary: pd.DataFrame) -> pd.DataFram
     return pd.DataFrame(rows)
 
 
+def _drop_rows_with_keys(existing: pd.DataFrame, new_df: pd.DataFrame, key_cols: list[str]) -> pd.DataFrame:
+    """Remove de ``existing`` as linhas cujas chaves aparecem em ``new_df`` (anti-join).
+
+    Vetorizado: o laço linha a linha era O(n^2) com 100 seeds x ~1800 janelas e
+    deixava duplicatas quando a chave tinha NaN (``seed`` das estratégias reais).
+    """
+    new_keys = new_df[key_cols].drop_duplicates().assign(_replaced=True)
+    marked = existing.merge(new_keys, on=key_cols, how="left")
+    return existing.loc[marked["_replaced"].isna().to_numpy()]
+
+
 def _merge_walk_forward_csv(
     new_df: pd.DataFrame,
     path: Path,
     key_cols: list[str],
 ) -> pd.DataFrame:
-    """Substitui linhas com mesmas chaves e mantém estratégias de execuções anteriores."""
+    """Substitui linhas com mesmas chaves e mantém o resto de execuções anteriores."""
     if not path.exists() or new_df.empty:
         return new_df
     existing = pd.read_csv(path)
     if existing.empty:
         return new_df
-    present_keys = new_df[key_cols].drop_duplicates()
-    mask = pd.Series(True, index=existing.index)
-    for col in key_cols:
-        if col not in existing.columns:
-            return pd.concat([existing, new_df], ignore_index=True)
-    for _, key_row in present_keys.iterrows():
-        row_mask = pd.Series(True, index=existing.index)
-        for col in key_cols:
-            row_mask &= existing[col] == key_row[col]
-        mask &= ~row_mask
-    kept = existing.loc[mask]
+    if any(col not in existing.columns for col in key_cols):
+        return pd.concat([existing, new_df], ignore_index=True)
+    kept = _drop_rows_with_keys(existing, new_df, key_cols)
     return pd.concat([kept, new_df], ignore_index=True)
 
 
@@ -1087,26 +1115,18 @@ def _merge_walk_forward_equity(
     new_df: pd.DataFrame,
     path: Path,
 ) -> pd.DataFrame:
-    """Mescla equity OOS: substitui (strategy, symbol, interval, window_id) presentes no batch."""
+    """Mescla equity OOS: substitui (strategy, symbol, interval, window_id[, seed]) do batch."""
     if not path.exists() or new_df.empty:
         return new_df
     existing = pd.read_parquet(path)
     if existing.empty:
         return new_df
     key_cols = ["strategy", "symbol", "interval", "window_id"]
-    for col in key_cols:
-        if col not in existing.columns:
-            return pd.concat([existing, new_df], ignore_index=True)
+    if any(col not in existing.columns for col in key_cols):
+        return pd.concat([existing, new_df], ignore_index=True)
     if "seed" in new_df.columns and "seed" in existing.columns:
         key_cols.append("seed")
-    present = new_df[key_cols].drop_duplicates()
-    mask = pd.Series(True, index=existing.index)
-    for _, key_row in present.iterrows():
-        row_mask = pd.Series(True, index=existing.index)
-        for col in key_cols:
-            row_mask &= existing[col] == key_row[col]
-        mask &= ~row_mask
-    kept = existing.loc[mask]
+    kept = _drop_rows_with_keys(existing, new_df, key_cols)
     return pd.concat([kept, new_df], ignore_index=True)
 
 
@@ -1164,7 +1184,15 @@ def save_walk_forward_results(
     equity_frames = []
 
     for r in all_results:
-        row = {"window_id": r.window_id, **r.test_metrics, **window_moments(r)}
+        row = {
+            "window_id": r.window_id,
+            **r.test_metrics,
+            **window_moments(r),
+            # Identificadores explícitos: entram na chave de merge (multi-ativo).
+            "strategy": r.strategy,
+            "symbol": r.symbol,
+            "interval": r.interval,
+        }
         if "seed" in r.best_params:
             row["seed"] = int(r.best_params["seed"])
         metrics_rows.append(row)
@@ -1194,7 +1222,7 @@ def save_walk_forward_results(
         equity_frames.append(eq_df)
 
     metrics_df = pd.DataFrame(metrics_rows)
-    metrics_keys = ["window_id", "strategy"]
+    metrics_keys = ["window_id", "strategy", "symbol", "interval"]
     if "seed" in metrics_df.columns:
         metrics_keys.append("seed")
     metrics_merged = _merge_walk_forward_csv(
@@ -1205,7 +1233,7 @@ def save_walk_forward_results(
     metrics_merged.to_csv(tables_dir / "walk_forward_results.csv", index=False)
 
     params_df = pd.DataFrame(params_rows)
-    params_keys = ["window_id", "strategy"]
+    params_keys = ["window_id", "strategy", "symbol", "interval"]
     if "param_seed" in params_df.columns:
         params_keys.append("param_seed")
     params_merged = _merge_walk_forward_csv(
