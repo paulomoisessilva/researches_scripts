@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Script 05 — Validação walk-forward out-of-sample.
 
-Usa treino+validação para selecionar parâmetros e aplica no teste.
-Resultados salvos em results/tables/ e data/backtests/.
+Usa treino+validação para selecionar parâmetros e aplica no teste. Cada
+execução (janela de treino x cenário de custo) grava em
+``results/walk_forward/<run_id>/`` (tabelas, equity e run_meta.json), sem
+sobrescrever outras execuções.
 
 Uso:
-    python scripts/05_run_walk_forward.py
-    python scripts/05_run_walk_forward.py --symbols BTCUSDT --intervals 5m
+    # execução primária do config (primeiro cenário de study.cost_scenarios)
+    python scripts/05_run_walk_forward.py --config config.paper.yaml
+
+    # estudo completo: study.train_days x study.cost_scenarios
+    python scripts/05_run_walk_forward.py --config config.paper.yaml --study
+
+    # janelas e custos explícitos (fee:slippage em bps por lado)
+    python scripts/05_run_walk_forward.py --config config.paper.yaml \
+        --train-days 14 21 --costs 2:2 5:5
+
     python scripts/05_run_walk_forward.py --strategies bollinger regression_bands
 """
 
@@ -16,20 +26,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pandas as pd
-
 from src.config import (
-    filter_dataframe_by_date_range,
     load_config,
-    get_project_root,
-    resolve_cost_bps,
     resolve_date_range,
     resolve_strategies,
 )
-from src.indicators import features_parquet_path, load_or_compute_features
-from src.strategies import STRATEGY_REGISTRY
-from src.utils import ensure_dir, setup_logger
-from src.walk_forward import run_walk_forward, save_walk_forward_results
+from src.utils import setup_logger
+from src.wf_runner import (
+    prepare_inputs,
+    resolve_cost_scenarios,
+    resolve_train_days,
+    run_experiment,
+)
 
 logger = setup_logger("05_run_walk_forward")
 
@@ -41,20 +49,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--intervals", nargs="+", default=None)
     parser.add_argument("--strategies", nargs="+", default=None)
     parser.add_argument("--fee-bps", type=float, default=None,
-                        help="Fee por lado em bps (default: config.backtest.fee_bps_per_side[0]).")
+                        help="Fee por lado em bps (um único cenário).")
     parser.add_argument("--slippage-bps", type=float, default=None,
-                        help="Slippage por lado em bps (default: config.backtest.slippage_bps_per_side[0]).")
-    parser.add_argument(
-        "--force-features",
-        action="store_true",
-        help="Recalcula features mesmo se o parquet existir.",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        help="Workers para grid search (default: walk_forward.parallel_workers no config).",
-    )
+                        help="Slippage por lado em bps (um único cenário).")
+    parser.add_argument("--costs", nargs="+", default=None, metavar="FEE:SLIP",
+                        help="Cenários de custo por lado em bps, ex.: 2:2 0:0 5:5.")
+    parser.add_argument("--train-days", nargs="+", type=int, default=None,
+                        help="Uma ou mais janelas de treino (dias); uma run por valor.")
+    parser.add_argument("--study", action="store_true",
+                        help="Usa study.train_days e study.cost_scenarios do config.")
+    parser.add_argument("--run-id", type=str, default=None,
+                        help="Nome da pasta da run (só com uma combinação janela x custo).")
+    parser.add_argument("--tag", type=str, default=None,
+                        help="Sufixo opcional anexado ao run_id gerado.")
+    parser.add_argument("--fresh", action="store_true",
+                        help="Apaga a pasta da run antes de executar (default: retoma/mescla).")
+    parser.add_argument("--force-features", action="store_true",
+                        help="Recalcula features mesmo se o parquet existir.")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="Workers para grid search (default: walk_forward.parallel_workers).")
     parser.add_argument("--start-date", type=str, default=None,
                         help="Início do período (default: config.data.start_date).")
     parser.add_argument("--end-date", type=str, default=None,
@@ -65,82 +78,55 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
+    if args.start_date:
+        cfg["data"]["start_date"] = args.start_date
+    if args.end_date:
+        cfg["data"]["end_date"] = args.end_date
     data_cfg = cfg["data"]
-    root = get_project_root()
-
-    processed_dir = root / data_cfg["processed_dir"]
-    backtests_dir = root / "data" / "backtests"
-    tables_dir = root / "results" / "tables"
-    ensure_dir(backtests_dir)
-    ensure_dir(tables_dir)
 
     syms = args.symbols or data_cfg["symbols"]
     ints = args.intervals or data_cfg["intervals"]
     strats = resolve_strategies(cfg, args.strategies)
-    start_date, end_date = resolve_date_range(cfg, args.start_date, args.end_date)
-    fee_bps, slippage_bps = resolve_cost_bps(cfg, args.fee_bps, args.slippage_bps)
+    start_date, end_date = resolve_date_range(cfg)
 
-    logger.info("=" * 60)
-    logger.info("WALK-FORWARD VALIDATION")
-    logger.info("Período: %s → %s", start_date, end_date)
-    logger.info("Estratégias: %s", strats)
-    logger.info("Fee: %.1f bps | Slippage: %.1f bps", fee_bps, slippage_bps)
-    wf_cfg = cfg.get("walk_forward", {})
-    logger.info(
-        "WF janelas: train=%s + validation=%s + test=%s | step=%s | metric=%s | EOD=%s",
-        wf_cfg.get("train_days"),
-        wf_cfg.get("validation_days", wf_cfg.get("val_days")),
-        wf_cfg.get("test_days"),
-        wf_cfg.get("step_days"),
-        wf_cfg.get("selection_metric", "net_sharpe"),
-        wf_cfg.get("close_position_end_of_day", True),
+    train_days_list = resolve_train_days(cfg, args.train_days, args.study)
+    cost_scenarios = resolve_cost_scenarios(
+        cfg, args.costs, args.fee_bps, args.slippage_bps, args.study
     )
-    workers = args.workers if args.workers is not None else wf_cfg.get("parallel_workers", 1)
-    logger.info("Grid workers: %d", workers)
-    logger.info("=" * 60)
+    n_runs = len(train_days_list) * len(cost_scenarios)
+    if args.run_id and n_runs > 1:
+        raise SystemExit("--run-id só vale para uma única combinação janela x custo.")
 
-    all_wf_results = []
+    logger.info("Período: %s -> %s | estratégias: %s", start_date, end_date, strats)
+    logger.info("Janelas de treino: %s | custos (fee:slip): %s", train_days_list, cost_scenarios)
+    logger.info("%d run(s) a executar.", n_runs)
 
-    for symbol in syms:
-        for interval in ints:
-            proc_path = processed_dir / f"{symbol}_{interval}.parquet"
-            if not proc_path.exists():
-                logger.warning("Dados processados não encontrados: %s", proc_path.name)
-                continue
+    inputs = prepare_inputs(
+        cfg, syms, ints, strats, start_date, end_date, force_features=args.force_features
+    )
 
-            df = pd.read_parquet(proc_path)
-
-            df, date_filtered = filter_dataframe_by_date_range(df, start_date, end_date)
-            logger.info("Candles no período: %d", len(df))
-
-            feat_path = features_parquet_path(root, symbol, interval)
-            df_feat = load_or_compute_features(
-                df,
+    run_dirs = []
+    for train_days in train_days_list:
+        for fee_bps, slippage_bps in cost_scenarios:
+            run_dir = run_experiment(
                 cfg,
-                features_path=feat_path,
-                force_compute=args.force_features or date_filtered,
-                strategy_names=strats,
+                inputs,
+                strats,
+                fee_bps,
+                slippage_bps,
+                train_days=train_days,
+                run_id=args.run_id,
+                tag=args.tag,
+                workers=args.workers,
+                fresh=args.fresh,
+                config_path=args.config,
             )
-            logger.info("Walk-forward: %s %s (%d candles)", symbol, interval, len(df_feat))
+            run_dirs.append(run_dir)
 
-            for strategy in strats:
-                logger.info("  Estratégia: %s", strategy)
-                results = run_walk_forward(
-                    df=df,
-                    strategy_name=strategy,
-                    cfg=cfg,
-                    symbol=symbol,
-                    interval=interval,
-                    fee_bps=fee_bps,
-                    slippage_bps=slippage_bps,
-                    df_feat=df_feat,
-                    n_workers=workers,
-                )
-                all_wf_results.extend(results)
-                logger.info("  -> %d janelas concluídas.", len(results))
-
-    save_walk_forward_results(all_wf_results, tables_dir, backtests_dir)
-    logger.info("Walk-forward concluído. %d janelas totais.", len(all_wf_results))
+    logger.info("Concluído. Runs:")
+    for run_dir in run_dirs:
+        logger.info("  %s", run_dir)
+    logger.info("Próximo passo: python scripts/07_paper_tables.py")
 
 
 if __name__ == "__main__":

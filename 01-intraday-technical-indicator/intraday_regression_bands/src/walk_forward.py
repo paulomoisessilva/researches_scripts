@@ -296,10 +296,16 @@ def build_windows(
     val_days: int,
     test_days: int,
     step_days: int,
+    oos_start: str | pd.Timestamp | None = None,
 ) -> list[WFWindow]:
     """Gera lista de janelas walk-forward.
 
     Cada janela tem período de treino, validação e teste não-sobrepostos.
+
+    ``oos_start`` fixa o início do primeiro período de teste. Assim, rodadas com
+    ``train_days`` diferentes avaliam exatamente o mesmo período OOS (e o mesmo
+    ``window_id`` corresponde ao mesmo dia de teste). Sem ele, o primeiro teste
+    começa em ``min_date + train_days + val_days``.
     """
     if "timestamp" not in df.columns:
         raise KeyError("Coluna 'timestamp' necessária para walk-forward.")
@@ -311,6 +317,17 @@ def build_windows(
     windows: list[WFWindow] = []
     wid = 0
     train_start = min_date
+    if oos_start is not None:
+        oos_ts = pd.Timestamp(oos_start)
+        if oos_ts.tzinfo is None and min_date.tzinfo is not None:
+            oos_ts = oos_ts.tz_localize(min_date.tzinfo)
+        train_start = oos_ts - pd.Timedelta(days=train_days + val_days)
+        if train_start < min_date:
+            raise ValueError(
+                f"oos_start={oos_ts.date()} exige dados desde {train_start.date()} "
+                f"(train_days+val_days={train_days + val_days}), "
+                f"mas o dataset começa em {min_date.date()}."
+            )
 
     while True:
         train_end = train_start + pd.Timedelta(days=train_days)
@@ -554,6 +571,39 @@ def _optimize_band_strategy(
     return _select_best_from_grid_results(results, default_params)
 
 
+def validate_grid_features(
+    df_feat: pd.DataFrame,
+    cfg: dict,
+    strategies: list[str],
+) -> None:
+    """Falha cedo se o grid do config usa features ausentes no DataFrame.
+
+    Sem esta checagem, combinações cujas colunas não existem (cache de features
+    gerado com outro grid) são descartadas em silêncio no grid search e a janela
+    cai nos parâmetros default.
+    """
+    missing: dict[str, list[dict]] = {}
+    probe = df_feat.iloc[:2]
+    for name in strategies:
+        if name not in BAND_STRATEGIES:
+            continue
+        for struct in _build_structural_param_grid(name, cfg):
+            try:
+                compute_band_z(probe, name, struct["window"], struct["k"])
+            except KeyError:
+                missing.setdefault(name, []).append(struct)
+    if missing:
+        detail = "; ".join(
+            f"{name}: {len(structs)} combos (ex.: {structs[0]})"
+            for name, structs in missing.items()
+        )
+        raise ValueError(
+            "Features do grid ausentes no DataFrame — " + detail +
+            ". Recalcule com 'python scripts/03_run_features.py --config <config>' "
+            "ou rode o script 05 com --force-features."
+        )
+
+
 def _band_z_param_combos(cfg: dict) -> list[dict]:
     """Combinações de limiares z para estratégias de bandas."""
     strat_cfg = cfg.get("strategy", {})
@@ -729,6 +779,126 @@ def _run_walk_forward_random(
     return results
 
 
+@dataclass
+class _WindowContext:
+    """Tudo que uma janela precisa (enviado uma vez a cada worker)."""
+
+    df_feat: pd.DataFrame
+    strategy_name: str
+    cfg: dict
+    bt_cfg: BacktestConfig
+    selection_metric: str
+    symbol: str
+    interval: str
+    fee_bps: float
+    slippage_bps: float
+    min_test_bars: int
+
+
+_BAND_FEATURE_PREFIXES = {
+    "bollinger": ("bb_upper_", "bb_mid_"),
+    "regression_bands": ("reg_upper_", "reg_fitted_"),
+    "return_residuals": ("resid_upper_", "resid_"),
+}
+_BAND_BASE_COLUMNS = ("timestamp", "open", "close", "log_price")
+
+
+def _prune_features_for_strategy(df_feat: pd.DataFrame, strategy_name: str) -> pd.DataFrame:
+    """Mantém só as colunas que a estratégia de bandas usa (menos dados por worker)."""
+    prefixes = _BAND_FEATURE_PREFIXES.get(strategy_name)
+    if prefixes is None:
+        return df_feat
+    keep = [
+        c for c in df_feat.columns
+        if c in _BAND_BASE_COLUMNS or c.startswith(prefixes)
+    ]
+    return df_feat[keep]
+
+
+def _run_one_window(
+    win: WFWindow,
+    ctx: _WindowContext,
+    grid_workers: int = 1,
+) -> WFResult | None:
+    """Otimiza na validação e avalia no teste uma janela walk-forward."""
+    logger.info(
+        "[WF %d] %s %s | treino %s–%s | val %s–%s | teste %s–%s",
+        win.window_id, ctx.strategy_name, ctx.symbol,
+        win.train_start.date(), win.train_end.date(),
+        win.val_start.date(), win.val_end.date(),
+        win.test_start.date(), win.test_end.date(),
+    )
+
+    df_feat_train_val = _slice_df(ctx.df_feat, win.train_start, win.val_end)
+    df_feat_test_context = _slice_df(ctx.df_feat, win.train_start, win.test_end)
+
+    if len(df_feat_train_val) < 50 or len(df_feat_test_context) < ctx.min_test_bars:
+        logger.warning("[WF %d] Dados insuficientes, janela ignorada.", win.window_id)
+        return None
+
+    best_params, val_score = optimize_params_on_validation(
+        df_train_val=df_feat_train_val,
+        strategy_name=ctx.strategy_name,
+        cfg=ctx.cfg,
+        bt_cfg_template=ctx.bt_cfg,
+        val_start=win.val_start,
+        val_end=win.val_end,
+        selection_metric=ctx.selection_metric,
+        df_feat_train_val=df_feat_train_val,
+        n_workers=grid_workers,
+    )
+
+    try:
+        test_result_full = _run_backtest_on_features(
+            df_feat_test_context, ctx.strategy_name, best_params, ctx.bt_cfg
+        )
+        test_result = _slice_backtest_result(test_result_full, win.test_start, win.test_end)
+    except Exception as exc:
+        logger.warning("[WF %d] Erro no teste: %s", win.window_id, exc)
+        return None
+
+    test_metrics = compute_metrics(
+        test_result.equity,
+        test_result.returns,
+        test_result.positions,
+        test_result.trades,
+        interval=ctx.interval,
+        strategy_name=ctx.strategy_name,
+        symbol=ctx.symbol,
+        fee_bps=ctx.fee_bps,
+        slippage_bps=ctx.slippage_bps,
+        gross_returns=test_result.gross_returns,
+    )
+
+    return WFResult(
+        window_id=win.window_id,
+        strategy=ctx.strategy_name,
+        symbol=ctx.symbol,
+        interval=ctx.interval,
+        best_params=best_params,
+        val_metric=val_score,
+        test_equity=test_result.equity,
+        test_returns=test_result.returns,
+        test_gross_returns=test_result.gross_returns,
+        test_positions=test_result.positions,
+        test_trades=test_result.trades,
+        test_metrics=test_metrics,
+    )
+
+
+_window_ctx: _WindowContext | None = None
+
+
+def _init_window_worker(ctx: _WindowContext) -> None:
+    global _window_ctx
+    _window_ctx = ctx
+
+
+def _window_worker(win: WFWindow) -> WFResult | None:
+    assert _window_ctx is not None
+    return _run_one_window(win, _window_ctx, grid_workers=1)
+
+
 def run_walk_forward(
     df: pd.DataFrame,
     strategy_name: str,
@@ -749,6 +919,7 @@ def run_walk_forward(
         val_days=_get_wf_int(wf_cfg, "validation_days", "val_days"),
         test_days=_get_wf_int(wf_cfg, "test_days"),
         step_days=_get_wf_int(wf_cfg, "step_days"),
+        oos_start=wf_cfg.get("oos_start"),
     )
 
     if not windows:
@@ -782,80 +953,39 @@ def run_walk_forward(
             df, cfg, symbol, interval, windows, df_feat_full, bt_cfg_template, wf_cfg
         )
 
-    if workers > 1:
-        logger.info("Grid search paralelo com %d workers.", workers)
+    window_ctx = _WindowContext(
+        df_feat=_prune_features_for_strategy(df_feat_full, strategy_name),
+        strategy_name=strategy_name,
+        cfg=cfg,
+        bt_cfg=bt_cfg_template,
+        selection_metric=selection_metric,
+        symbol=symbol,
+        interval=interval,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        min_test_bars=1 if wf_cfg.get("test_days", 1) == 1 else 10,
+    )
+
+    if workers > 1 and len(windows) > 1:
+        # Paraleliza ENTRE janelas (independentes): cada processo faz o grid de uma
+        # janela sequencialmente. Subir um pool por janela para o grid custava mais
+        # (spawn no Windows) do que o próprio grid.
+        logger.info("Walk-forward paralelo por janela com %d workers.", workers)
+        with ProcessPoolExecutor(
+            max_workers=min(workers, len(windows)),
+            initializer=_init_window_worker,
+            initargs=(window_ctx,),
+        ) as executor:
+            outputs = list(executor.map(_window_worker, windows, chunksize=1))
+        return [r for r in outputs if r is not None]
 
     results: list[WFResult] = []
-
     for win in windows:
-        logger.info(
-            "[WF %d] %s %s | treino %s–%s | val %s–%s | teste %s–%s",
-            win.window_id, strategy_name, symbol,
-            win.train_start.date(), win.train_end.date(),
-            win.val_start.date(), win.val_end.date(),
-            win.test_start.date(), win.test_end.date(),
-        )
-
-        df_feat_train_val = _slice_df(df_feat_full, win.train_start, win.val_end)
-        df_feat_test_context = _slice_df(df_feat_full, win.train_start, win.test_end)
-
-        min_test_bars = 1 if wf_cfg.get("test_days", 1) == 1 else 10
-        if len(df_feat_train_val) < 50 or len(df_feat_test_context) < min_test_bars:
-            logger.warning("[WF %d] Dados insuficientes, janela ignorada.", win.window_id)
-            continue
-
-        best_params, val_score = optimize_params_on_validation(
-            df_train_val=df,
-            strategy_name=strategy_name,
-            cfg=cfg,
-            bt_cfg_template=bt_cfg_template,
-            val_start=win.val_start,
-            val_end=win.val_end,
-            selection_metric=selection_metric,
-            df_feat_train_val=df_feat_train_val,
-            n_workers=workers,
-        )
-
-        try:
-            test_result_full = _run_backtest_on_features(
-                df_feat_test_context, strategy_name, best_params, bt_cfg_template
-            )
-            test_result = _slice_backtest_result(
-                test_result_full, win.test_start, win.test_end
-            )
-        except Exception as exc:
-            logger.warning("[WF %d] Erro no teste: %s", win.window_id, exc)
-            continue
-
-        test_metrics = compute_metrics(
-            test_result.equity,
-            test_result.returns,
-            test_result.positions,
-            test_result.trades,
-            interval=interval,
-            strategy_name=strategy_name,
-            symbol=symbol,
-            fee_bps=fee_bps,
-            slippage_bps=slippage_bps,
-            gross_returns=test_result.gross_returns,
-        )
-
-        results.append(WFResult(
-            window_id=win.window_id,
-            strategy=strategy_name,
-            symbol=symbol,
-            interval=interval,
-            best_params=best_params,
-            val_metric=val_score,
-            test_equity=test_result.equity,
-            test_returns=test_result.returns,
-            test_gross_returns=test_result.gross_returns,
-            test_positions=test_result.positions,
-            test_trades=test_result.trades,
-            test_metrics=test_metrics,
-        ))
-
+        result = _run_one_window(win, window_ctx, grid_workers=workers)
+        if result is not None:
+            results.append(result)
     return results
+
 
 
 def aggregate_walk_forward_oos(all_results: list[WFResult]) -> pd.DataFrame:
@@ -980,12 +1110,45 @@ def _merge_walk_forward_equity(
     return pd.concat([kept, new_df], ignore_index=True)
 
 
+def window_moments(r: WFResult) -> dict[str, Any]:
+    """Momentos dos retornos OOS da janela, suficientes para reagregar por período.
+
+    Somas de retorno log líquido/bruto, soma de quadrados e unidades de turnover
+    permitem recalcular retorno composto, Sharpe (ddof=1) e break-even para
+    qualquer agrupamento de janelas (por ano, por regime) sem guardar as barras.
+    A janela é atribuída à data UTC da sua primeira barra (``test_date``).
+    """
+    ret = r.test_returns.fillna(0.0).astype(float)
+    gross = r.test_gross_returns.reindex(ret.index).fillna(0.0).astype(float)
+    pos = r.test_positions.reindex(ret.index).fillna(0.0).astype(float)
+    idx = r.test_returns.index
+    test_date = (
+        pd.Timestamp(idx[0]).strftime("%Y-%m-%d")
+        if isinstance(idx, pd.DatetimeIndex) and len(idx)
+        else None
+    )
+    return {
+        "test_date": test_date,
+        "n_bars": int(len(ret)),
+        "sum_ret": float(ret.sum()),
+        "sum_sq_ret": float((ret ** 2).sum()),
+        "sum_gross_ret": float(gross.sum()),
+        "turnover_units": float(pos.diff().abs().fillna(0.0).sum()),
+    }
+
+
 def save_walk_forward_results(
     all_results: list[WFResult],
     tables_dir: str | Path,
     backtests_dir: str | Path,
+    save_random_equity: bool = True,
 ) -> None:
-    """Salva resultados walk-forward em CSV, Parquet e tabela de parâmetros."""
+    """Salva resultados walk-forward em CSV, Parquet e tabela de parâmetros.
+
+    ``save_random_equity=False`` omite as curvas de equity do baseline aleatório
+    (100 seeds x ~1800 janelas geram dezenas de milhões de linhas); as métricas
+    e os momentos por janela do random continuam salvos.
+    """
     tables_dir = Path(tables_dir)
     backtests_dir = Path(backtests_dir)
     ensure_dir(tables_dir)
@@ -1001,7 +1164,7 @@ def save_walk_forward_results(
     equity_frames = []
 
     for r in all_results:
-        row = {"window_id": r.window_id, **r.test_metrics}
+        row = {"window_id": r.window_id, **r.test_metrics, **window_moments(r)}
         if "seed" in r.best_params:
             row["seed"] = int(r.best_params["seed"])
         metrics_rows.append(row)
@@ -1014,6 +1177,9 @@ def save_walk_forward_results(
             "val_metric": r.val_metric,
             **{f"param_{k}": v for k, v in r.best_params.items()},
         })
+
+        if r.strategy == "random" and not save_random_equity:
+            continue
 
         eq_df = pd.DataFrame({
             "timestamp": r.test_equity.index,

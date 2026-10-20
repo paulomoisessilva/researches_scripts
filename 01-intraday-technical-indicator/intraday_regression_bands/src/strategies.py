@@ -54,16 +54,19 @@ def _reversal_confirmed_position(
     Saída long  : z >= exit_long_z
     Saída short : z <= exit_short_z
     """
-    position = pd.Series(0.0, index=z.index)
+    # Loop sobre ndarray: atribuir via ``Series.iloc[i]`` custava ~90% do tempo do
+    # grid search walk-forward (mesma lógica, resultado idêntico).
+    n = len(z)
+    pos_vals = np.zeros(n)
     current_pos = 0.0
     z_vals = z.values
 
-    for i in range(1, len(z)):
+    for i in range(1, n):
         z_prev = z_vals[i - 1]
         z_curr = z_vals[i]
 
         if np.isnan(z_prev) or np.isnan(z_curr):
-            position.iloc[i] = current_pos
+            pos_vals[i] = current_pos
             continue
 
         if current_pos == 1.0:
@@ -79,9 +82,9 @@ def _reversal_confirmed_position(
             elif z_prev > entry_short_z and z_curr <= entry_short_z:
                 current_pos = -1.0
 
-        position.iloc[i] = current_pos
+        pos_vals[i] = current_pos
 
-    return position
+    return pd.Series(pos_vals, index=z.index)
 
 
 def signal_from_z(

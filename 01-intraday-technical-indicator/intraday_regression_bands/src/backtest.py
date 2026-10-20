@@ -96,7 +96,12 @@ def run_backtest(
     slip_rate = cfg_bt.slippage_bps / 10_000.0
     per_side_rate = fee_rate + slip_rate
 
-    utc_dates = _utc_dates(df["timestamp"]) if cfg_bt.close_eod else None
+    # Máscara do último candle de cada dia UTC, calculada uma vez (não por barra).
+    eod_last_bar = np.zeros(n, dtype=bool)
+    if cfg_bt.close_eod:
+        utc_dates = _utc_dates(df["timestamp"])
+        eod_last_bar[:-1] = utc_dates[:-1] != utc_dates[1:]
+        eod_last_bar[-1] = True
 
     trade_records: list[dict] = []
     entry_price = np.nan
@@ -110,7 +115,7 @@ def run_backtest(
             new_pos = 0.0
 
         # EOD: fecha no open do último candle UTC do dia (não no open do dia seguinte).
-        if cfg_bt.close_eod and utc_dates is not None and _is_last_bar_of_utc_day(t, n, utc_dates):
+        if eod_last_bar[t]:
             new_pos = 0.0
 
         changed = new_pos != prev_pos

@@ -1,4 +1,4 @@
-# Config rápido para smoke tests (~210 dias, BTC 15m).
+# Config rápido para smoke tests (~90 dias: 2023-01-01 a 2023-03-31, BTC 15m).
 # Uso: python scripts/NN_*.py --config config.dev.yaml
 #
 # raw/processed em pastas _dev para não sobrescrever o dataset completo.

@@ -12,12 +12,16 @@ from .utils import ensure_dir, setup_logger, bars_per_day
 
 logger = setup_logger(__name__)
 
-_TRADING_DAYS_PER_YEAR = 252
+# Cripto negocia 24/7: 365 dias por ano (não os 252 pregões de ações).
+_DAYS_PER_YEAR = 365
 
 
-def _annualization_factor(interval: str) -> float:
-    bpd = bars_per_day(interval)
-    return bpd * _TRADING_DAYS_PER_YEAR
+def annualization_factor(interval: str) -> float:
+    """Barras por ano para o intervalo (365 dias × barras/dia)."""
+    return bars_per_day(interval) * _DAYS_PER_YEAR
+
+
+_annualization_factor = annualization_factor
 
 
 def total_return(equity: pd.Series) -> float:

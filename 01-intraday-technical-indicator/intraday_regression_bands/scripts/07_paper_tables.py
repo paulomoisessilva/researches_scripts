@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Script 07 — Tabelas do paper a partir das runs em results/walk_forward/.
+
+Gera em ``results/paper/``:
+  oos_by_period_all_runs.csv   estratégias reais por ano (+ ALL), com posição frente ao random
+  random_by_period_all_runs.csv distribuição do baseline aleatório entre seeds, por ano (+ ALL)
+  sharpe_by_year_primary.csv   Sharpe estratégia x ano da run primária
+  train_window_comparison.csv  Sharpe OOS (ALL) por janela de treino, no custo primário
+  cost_sensitivity.csv         Sharpe OOS (ALL) por cenário de custo, na janela primária
+  paper_tables.md              as tabelas acima em Markdown
+
+A run primária é a de ``walk_forward.train_days`` do config e do primeiro cenário de
+``study.cost_scenarios`` (ou use --train-days/--costs).
+
+Uso:
+    python scripts/07_paper_tables.py --config config.paper.yaml
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import pandas as pd
+
+from src.config import get_project_root, load_config
+from src.utils import ensure_dir, setup_logger
+from src.wf_analysis import (
+    ALL_PERIOD,
+    collect_runs,
+    list_runs,
+    sharpe_pivot,
+    to_markdown,
+)
+from src.wf_runner import RUNS_SUBDIR, resolve_cost_scenarios, resolve_train_days
+
+logger = setup_logger("07_paper_tables")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Gera tabelas do paper (por ano e por run).")
+    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--runs-root", type=str, default=None,
+                        help="Pasta com as runs (default: results/walk_forward).")
+    parser.add_argument("--train-days", type=int, default=None,
+                        help="Janela de treino da run primária (default: do config).")
+    parser.add_argument("--costs", type=str, default=None, metavar="FEE:SLIP",
+                        help="Custo da run primária (default: primeiro de study.cost_scenarios).")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    cfg = load_config(args.config)
+    root = get_project_root()
+    runs_root = Path(args.runs_root) if args.runs_root else root / RUNS_SUBDIR
+    out_dir = root / "results" / "paper"
+    ensure_dir(out_dir)
+
+    run_dirs = list_runs(runs_root)
+    if not run_dirs:
+        raise SystemExit(f"Nenhuma run em {runs_root}. Rode scripts/05_run_walk_forward.py primeiro.")
+    logger.info("%d run(s) encontradas em %s", len(run_dirs), runs_root)
+
+    real, dist = collect_runs(run_dirs)
+    if real.empty:
+        raise SystemExit("Runs sem estratégias reais para tabular.")
+
+    primary_train = resolve_train_days(cfg, [args.train_days] if args.train_days else None)[0]
+    primary_fee, primary_slip = resolve_cost_scenarios(
+        cfg, [args.costs] if args.costs else None
+    )[0]
+    logger.info("Run primária: train_days=%s | fee=%g slip=%g", primary_train, primary_fee, primary_slip)
+
+    real.to_csv(out_dir / "oos_by_period_all_runs.csv", index=False)
+    if not dist.empty:
+        dist.to_csv(out_dir / "random_by_period_all_runs.csv", index=False)
+
+    primary = {"train_days": primary_train, "fee_bps": primary_fee, "slippage_bps": primary_slip}
+    md: list[str] = ["# Tabelas do paper (walk-forward OOS)\n"]
+
+    by_year = sharpe_pivot(real, filters=primary)
+    if by_year.empty:
+        logger.warning("Run primária não encontrada (%s); tabela por ano omitida.", primary)
+    else:
+        by_year.to_csv(out_dir / "sharpe_by_year_primary.csv")
+        md += [
+            f"## Sharpe OOS por ano — treino {primary_train}d, custo {primary_fee:g}+{primary_slip:g} bps/lado\n",
+            to_markdown(by_year),
+            "",
+        ]
+        if not dist.empty:
+            rnd = dist[
+                (dist["train_days"] == primary_train)
+                & (dist["fee_bps"] == primary_fee)
+                & (dist["slippage_bps"] == primary_slip)
+            ].set_index("period")[["n_seeds", "sharpe_p05", "sharpe_p50", "sharpe_p95"]]
+            rnd = rnd.loc[[p for p in rnd.index if p != ALL_PERIOD] + ([ALL_PERIOD] if ALL_PERIOD in rnd.index else [])]
+            md += ["### Placebo `random` (Sharpe entre seeds)\n", to_markdown(rnd), ""]
+
+    all_period = real[real["period"] == ALL_PERIOD]
+
+    windows_cmp = sharpe_pivot(
+        all_period,
+        columns="train_days",
+        filters={"fee_bps": primary_fee, "slippage_bps": primary_slip},
+    )
+    if not windows_cmp.empty:
+        windows_cmp.to_csv(out_dir / "train_window_comparison.csv")
+        md += [
+            f"## Sharpe OOS por janela de treino (dias) — custo {primary_fee:g}+{primary_slip:g} bps/lado\n",
+            to_markdown(windows_cmp),
+            "",
+        ]
+
+    cost_cmp = all_period[all_period["train_days"] == primary_train].copy()
+    if not cost_cmp.empty:
+        cost_cmp["custo_por_lado_bps"] = cost_cmp["fee_bps"] + cost_cmp["slippage_bps"]
+        cost_pv = cost_cmp.pivot_table(
+            index="strategy", columns="custo_por_lado_bps", values="sharpe", aggfunc="first"
+        )
+        cost_pv.to_csv(out_dir / "cost_sensitivity.csv")
+        md += [
+            f"## Sharpe OOS por custo (fee+slippage por lado, bps) — treino {primary_train}d\n",
+            to_markdown(cost_pv),
+            "",
+        ]
+
+    (out_dir / "paper_tables.md").write_text("\n".join(md), encoding="utf-8")
+    logger.info("Tabelas salvas em %s", out_dir)
+
+
+if __name__ == "__main__":
+    main()

@@ -78,12 +78,30 @@ python scripts/03_run_features.py
 # 4. Rodar backtests por estratégia e custo
 python scripts/04_run_backtests.py
 
-# 5. Validação walk-forward
-python scripts/05_run_walk_forward.py
+# 5. Validação walk-forward (cada run grava em results/walk_forward/<run_id>/)
+python scripts/05_run_walk_forward.py --config config.paper.yaml          # run primária
+python scripts/05_run_walk_forward.py --config config.paper.yaml --study  # janelas x custos
 
-# 6. Gerar gráficos, tabelas e relatório
+# 6. Gerar gráficos, tabelas e relatório do backtest fixo (script 04)
 python scripts/06_generate_results.py
+
+# 7. Tabelas do paper (por ano, por janela de treino, por custo) a partir das runs do passo 5
+python scripts/07_paper_tables.py --config config.paper.yaml
 ```
+
+### Runs do walk-forward (`run_id`)
+
+Cada combinação janela de treino × cenário de custo é uma *run* com pasta própria em
+`results/walk_forward/<run_id>/` (`walk_forward_results.csv`, `best_parameters_by_window.csv`,
+`walk_forward_oos_summary.csv`, `walk_forward_equity.parquet`, `run_meta.json`). O `run_id` padrão
+codifica janelas, custo e período, ex.: `tr21_va7_te1_st1_fee2_slip2_20210101-20251231_oos20210301`.
+
+- `--costs 2:2 5:5` — cenários fee:slippage (bps por lado); sem isso usa o primeiro de `study.cost_scenarios`.
+- `--train-days 14 21 42` — uma run por janela de treino. `--study` usa `study.*` do config.
+- `--fresh` apaga a run antes; sem ele a execução retoma/mescla. Trocar o grid ou as janelas numa pasta
+  existente é recusado (impressão digital do config em `run_meta.json`).
+- `walk_forward.oos_start` fixa o primeiro dia de teste, então todas as janelas de treino avaliam o **mesmo** período OOS.
+- Sem custo configurado o padrão é fee=0/slippage=0 (resultado bruto); o script avisa.
 
 ### Flags disponíveis
 
@@ -127,11 +145,14 @@ Custos testados: 0, 2, 5, 10 bps por lado.
 
 ### Walk-forward
 
-- Treino: 180 dias
-- Validação: 60 dias
-- Teste: 60 dias
-- Passo: 60 dias
-- Seleção por Sharpe líquido no período de validação
+Config do paper (`config.paper.yaml`):
+
+- Treino: 21 dias (estudo de robustez: 14, 21 e 42)
+- Validação: 7 dias
+- Teste: 1 dia, passo de 1 dia, primeiro dia de teste em `oos_start` (2021-03-01)
+- Seleção por Sharpe líquido (`net_sharpe`) apenas no período de validação; posição fechada no fim do dia UTC
+- Sharpe e retorno anualizados com 365 dias/ano (cripto 24/7)
+- Tabelas por ano: `scripts/07_paper_tables.py` reagrega os momentos por janela (`sum_ret`, `sum_sq_ret`, ...)
 
 ### Baseline aleatório multi-seed (placebo)
 

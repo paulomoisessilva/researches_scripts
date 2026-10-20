@@ -1,0 +1,195 @@
+"""Testes dos momentos por janela, do salvamento e das tabelas por ano."""
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.metrics import sharpe_ratio
+from src.walk_forward import WFResult, save_walk_forward_results, window_moments
+from src.wf_analysis import (
+    ALL_PERIOD,
+    metrics_from_moments,
+    run_tables,
+    sharpe_from_moments,
+    sharpe_pivot,
+)
+
+
+def _result(strategy: str, window_id: int, day: str, rets: np.ndarray, seed=None) -> WFResult:
+    idx = pd.date_range(day, periods=len(rets), freq="15min", tz="UTC")
+    ret = pd.Series(rets, index=idx)
+    pos = pd.Series(np.where(np.arange(len(rets)) % 8 < 4, 1.0, 0.0), index=idx)
+    params = {"window": 20, "k": 2.0}
+    if seed is not None:
+        params = {"seed": seed, "trade_prob": 0.05}
+    return WFResult(
+        window_id=window_id,
+        strategy=strategy,
+        symbol="BTCUSDT",
+        interval="15m",
+        best_params=params,
+        val_metric=1.0,
+        test_equity=pd.Series(np.exp(ret.cumsum()), index=idx),
+        test_returns=ret,
+        test_gross_returns=ret,
+        test_positions=pos,
+        test_trades=pd.DataFrame({"entry_idx": [0], "exit_idx": [1]}),
+        test_metrics={
+            "strategy": strategy, "symbol": "BTCUSDT", "interval": "15m",
+            "sharpe": 1.0, "number_of_trades": 1,
+        },
+    )
+
+
+def _fake_run(tmp_path, with_random_equity=True):
+    rng = np.random.default_rng(3)
+    days = ["2021-12-30", "2021-12-31", "2022-01-01", "2022-01-02"]
+    results = []
+    for wid, day in enumerate(days):
+        results.append(_result("bollinger", wid, day, rng.normal(2e-5, 1e-3, 96)))
+        for seed in range(5):
+            results.append(_result("random", wid, day, rng.normal(0, 1e-3, 96), seed=seed))
+    save_walk_forward_results(results, tmp_path, tmp_path, save_random_equity=with_random_equity)
+    return results
+
+
+class TestMoments:
+    def test_sharpe_from_moments_matches_sharpe_ratio(self):
+        rng = np.random.default_rng(1)
+        r = pd.Series(rng.normal(1e-5, 1e-3, 500))
+        got = sharpe_from_moments(len(r), r.sum(), (r ** 2).sum(), "15m")
+        assert got == pytest.approx(sharpe_ratio(r, "15m"))
+
+    def test_window_moments(self):
+        res = _result("bollinger", 0, "2022-01-01", np.full(96, 1e-4))
+        m = window_moments(res)
+        assert m["test_date"] == "2022-01-01"
+        assert m["n_bars"] == 96
+        assert m["sum_ret"] == pytest.approx(96e-4)
+        assert m["turnover_units"] == 23.0  # 12 descidas + 11 subidas em 96 barras
+
+    def test_zero_variance_gives_zero_sharpe(self):
+        assert sharpe_from_moments(10, 0.0, 0.0, "15m") == 0.0
+
+
+class TestSaveAndTables:
+    def test_save_writes_moment_columns(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        for col in ("test_date", "n_bars", "sum_ret", "sum_sq_ret", "sum_gross_ret", "turnover_units"):
+            assert col in df.columns
+
+    def test_random_equity_can_be_omitted(self, tmp_path):
+        _fake_run(tmp_path, with_random_equity=False)
+        eq = pd.read_parquet(tmp_path / "walk_forward_equity.parquet")
+        assert set(eq["strategy"]) == {"bollinger"}
+
+    def test_random_equity_kept_by_default(self, tmp_path):
+        _fake_run(tmp_path, with_random_equity=True)
+        eq = pd.read_parquet(tmp_path / "walk_forward_equity.parquet")
+        assert "random" in set(eq["strategy"])
+
+    def test_yearly_table_splits_by_year_and_matches_overall(self, tmp_path):
+        results = _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        real, dist = run_tables(df)
+
+        periods = set(real["period"])
+        assert periods == {ALL_PERIOD, "2021", "2022"}
+        by = real.set_index(["strategy", "period"])
+        assert by.loc[("bollinger", "2021"), "n_days"] == 2
+        assert by.loc[("bollinger", "2022"), "n_days"] == 2
+
+        # Retorno composto do ALL = produto dos anos
+        tot = (1 + by.loc[("bollinger", "2021"), "total_return"]) * (
+            1 + by.loc[("bollinger", "2022"), "total_return"]
+        )
+        assert tot - 1 == pytest.approx(by.loc[("bollinger", ALL_PERIOD), "total_return"])
+
+        # Sharpe do ALL bate com o Sharpe das barras concatenadas
+        rets = pd.concat([r.test_returns for r in results if r.strategy == "bollinger"])
+        assert by.loc[("bollinger", ALL_PERIOD), "sharpe"] == pytest.approx(
+            sharpe_ratio(rets, "15m")
+        )
+
+    def test_random_distribution_and_percentile(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        real, dist = run_tables(df)
+        row_all = dist[dist["period"] == ALL_PERIOD].iloc[0]
+        assert row_all["n_seeds"] == 5
+        assert row_all["sharpe_p05"] <= row_all["sharpe_p50"] <= row_all["sharpe_p95"]
+        pct = real.loc[real["period"] == ALL_PERIOD, "pct_random_below_sharpe"].iloc[0]
+        assert 0.0 <= pct <= 1.0
+
+    def test_pivot(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        real, _ = run_tables(df)
+        pv = sharpe_pivot(real)
+        assert list(pv.columns)[-1] == ALL_PERIOD
+        assert "bollinger" in pv.index
+
+
+def test_metrics_from_moments_break_even():
+    grp = pd.DataFrame({
+        "n_bars": [96], "sum_ret": [0.01], "sum_sq_ret": [0.0001],
+        "sum_gross_ret": [0.02], "turnover_units": [10.0],
+        "test_date": ["2022-01-01"], "number_of_trades": [3],
+    })
+    m = metrics_from_moments(grp, "15m")
+    assert m["break_even_bps"] == pytest.approx(0.02 * 10_000 / 10.0)
+
+
+class TestWindowParallelism:
+    """Paralelizar entre janelas deve dar exatamente o mesmo resultado que o modo sequencial."""
+
+    @staticmethod
+    def _setup():
+        from src.indicators import compute_all_features
+
+        rng = np.random.default_rng(11)
+        n = 40 * 96
+        close = 30_000 * np.exp(np.cumsum(rng.normal(0, 6e-4, n)))
+        ts = pd.date_range("2022-01-01", periods=n, freq="15min", tz="UTC")
+        df = pd.DataFrame({
+            "timestamp": ts,
+            "open": close * (1 + rng.normal(0, 2e-4, n)),
+            "high": close * 1.001,
+            "low": close * 0.999,
+            "close": close,
+            "volume": rng.uniform(1, 100, n),
+        })
+        cfg = {
+            "backtest": {"initial_capital": 10_000, "allow_short": True, "max_position": 1.0},
+            "features": {
+                "rsi_windows": [14], "stochastic_windows": [14],
+                "bollinger_windows": [20], "bollinger_k": [2.0, 3.0],
+                "regression_windows": [50], "regression_k": [2.0, 3.0],
+            },
+            "strategy": {
+                "entry_long_z": [0.8, 1.0], "entry_short_z": [0.8], "exit_long_z": [0.0],
+                "exit_short_z": [0.0],
+            },
+            "walk_forward": {
+                "train_days": 10, "validation_days": 3, "test_days": 1, "step_days": 4,
+                "selection_metric": "net_sharpe", "close_position_end_of_day": True,
+            },
+        }
+        return df, compute_all_features(df, cfg), cfg
+
+    @pytest.mark.parametrize("strategy", ["bollinger", "regression_bands", "return_residuals"])
+    def test_parallel_matches_sequential(self, strategy):
+        from src.walk_forward import run_walk_forward
+
+        df, df_feat, cfg = self._setup()
+        kwargs = dict(df=df, strategy_name=strategy, cfg=cfg, symbol="BTCUSDT",
+                      interval="15m", fee_bps=2.0, slippage_bps=2.0, df_feat=df_feat)
+        seq = run_walk_forward(**kwargs, n_workers=1)
+        par = run_walk_forward(**kwargs, n_workers=2)
+
+        assert len(seq) == len(par) > 3
+        for a, b in zip(sorted(seq, key=lambda r: r.window_id), sorted(par, key=lambda r: r.window_id)):
+            assert a.window_id == b.window_id
+            assert a.best_params == b.best_params
+            pd.testing.assert_series_equal(a.test_returns, b.test_returns)
