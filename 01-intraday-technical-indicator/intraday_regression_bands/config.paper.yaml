@@ -60,9 +60,9 @@ walk_forward:
   validation_days: 7
   test_days: 1
   step_days: 1
-  # Primeiro dia de teste fixo: runs com train_days diferentes avaliam o MESMO
+  # Primeiro dia de teste fixo: runs com validation_days diferentes avaliam o MESMO
   # período OOS (window_id = mesmo dia). Precisa de >= train_days+validation_days
-  # de histórico antes (o maior treino do estudo é 42+7 = 49 dias < 59 dias até aqui).
+  # de histórico antes (o maior caso do estudo é 21+28 = 49 dias < 59 dias até aqui).
   oos_start: "2021-03-01"
   close_position_end_of_day: true
   selection_metric: "net_sharpe"
@@ -73,12 +73,13 @@ walk_forward:
   # 100 seeds x ~1800 janelas geram dezenas de milhões de linhas de equity por run.
   save_random_equity: false
 
-# Estudo de robustez (--study): comprimento da janela de treino.
-# ATENÇÃO: a seleção de parâmetros pontua só a janela de VALIDAÇÃO; o treino apenas aquece a
-# estratégia e NÃO altera a escolha (verificado: train_days 10 e 14 deram resultados idênticos).
-# Para estudar o lookback de seleção, varie walk_forward.validation_days (decisão pendente).
+# Estudo de robustez (--study): lookback da seleção de parâmetros.
+# A seleção pontua SÓ a janela de validação; o treino apenas aquece a estratégia e não altera
+# a escolha (verificado: train_days 10 e 14 deram resultados idênticos). Por isso o estudo varia
+# validation_days (quantos dias recentes decidem os parâmetros), com train_days fixo.
+# Máximo de histórico exigido: train_days + max(validation_days) = 21 + 28 = 49 dias < oos_start.
 study:
-  train_days: [14, 21, 42]
+  validation_days: [7, 14, 28]
   # [fee_bps, slippage_bps] por lado usados na SELEÇÃO de parâmetros (net_sharpe na
   # validação) e nas métricas líquidas. A sensibilidade a custo é reportada pelo
   # custo de break-even (CBE), não por uma varredura de cenários: para posições

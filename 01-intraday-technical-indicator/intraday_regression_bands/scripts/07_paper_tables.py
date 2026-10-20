@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """Script 07 — Tabelas do paper a partir das runs em results/walk_forward/.
 
-Gera em ``results/paper/``:
+Gera em ``<pasta das runs>/../paper/`` (por padrão ``results/paper/``):
   oos_by_period_all_runs.csv   estratégias reais por ano (+ ALL), com posição frente ao random
   random_by_period_all_runs.csv distribuição do baseline aleatório entre seeds, por ano (+ ALL)
   sharpe_by_year_primary.csv   Sharpe estratégia x ano da run primária
   cbe_by_year_primary.csv      custo de break-even (bps/lado) estratégia x ano da run primária
   cbe_vs_random_primary.csv    Sharpe e CBE da estratégia frente ao placebo, por ano
-  train_window_comparison.csv  Sharpe OOS (ALL) por janela de treino, no custo primário
-  train_window_comparison_cbe.csv  CBE OOS (ALL) por janela de treino
+  lookback_comparison.csv      Sharpe OOS (ALL) por janela de validação (lookback de seleção)
+  lookback_comparison_cbe.csv  CBE OOS (ALL) por janela de validação
   cost_sensitivity.csv         Sharpe OOS (ALL) por cenário de custo (só com >1 custo rodado)
   paper_tables.md              as tabelas acima em Markdown
 
 O CBE (retorno bruto / turnover, em bps por lado) resume a sensibilidade a custo: para
 posições fixas o retorno líquido é linear no custo, então não é preciso varrer cenários.
 
-A run primária é a de ``walk_forward.train_days`` do config e do primeiro cenário de
-``study.cost_scenarios`` (ou use --train-days/--costs).
+A janela de validação é o lookback de seleção de parâmetros (só ela entra na pontuação;
+o treino apenas aquece a estratégia). A run primária é a de ``walk_forward.train_days`` e
+``validation_days`` do config e do primeiro cenário de ``study.cost_scenarios`` (ou use
+--train-days/--validation-days/--costs).
 
 Uso:
     python scripts/07_paper_tables.py --config config.paper.yaml
@@ -28,9 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pandas as pd
-
-from src.config import get_project_root, load_config
+from src.config import load_config
 from src.utils import ensure_dir, setup_logger
 from src.wf_analysis import (
     ALL_PERIOD,
@@ -39,7 +39,12 @@ from src.wf_analysis import (
     sharpe_pivot,
     to_markdown,
 )
-from src.wf_runner import resolve_cost_scenarios, resolve_runs_root, resolve_train_days
+from src.wf_runner import (
+    resolve_cost_scenarios,
+    resolve_runs_root,
+    resolve_train_days,
+    resolve_validation_days,
+)
 
 logger = setup_logger("07_paper_tables")
 
@@ -51,6 +56,8 @@ def parse_args() -> argparse.Namespace:
                         help="Pasta com as runs (default: walk_forward.runs_dir do config).")
     parser.add_argument("--train-days", type=int, default=None,
                         help="Janela de treino da run primária (default: do config).")
+    parser.add_argument("--validation-days", type=int, default=None,
+                        help="Janela de validação (lookback de seleção) da run primária (default: do config).")
     parser.add_argument("--costs", type=str, default=None, metavar="FEE:SLIP",
                         help="Custo da run primária (default: primeiro de study.cost_scenarios).")
     return parser.parse_args()
@@ -59,7 +66,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
-    root = get_project_root()
     runs_root = Path(args.runs_root) if args.runs_root else resolve_runs_root(cfg)
     out_dir = runs_root.parent / "paper"  # results/paper (ou results/smoke/paper no smoke)
     ensure_dir(out_dir)
@@ -74,16 +80,28 @@ def main() -> None:
         raise SystemExit("Runs sem estratégias reais para tabular.")
 
     primary_train = resolve_train_days(cfg, [args.train_days] if args.train_days else None)[0]
+    primary_val = resolve_validation_days(
+        cfg, [args.validation_days] if args.validation_days else None
+    )[0]
     primary_fee, primary_slip = resolve_cost_scenarios(
         cfg, [args.costs] if args.costs else None
     )[0]
-    logger.info("Run primária: train_days=%s | fee=%g slip=%g", primary_train, primary_fee, primary_slip)
+    logger.info(
+        "Run primária: treino=%s validação=%s | fee=%g slip=%g",
+        primary_train, primary_val, primary_fee, primary_slip,
+    )
 
     real.to_csv(out_dir / "oos_by_period_all_runs.csv", index=False)
     if not dist.empty:
         dist.to_csv(out_dir / "random_by_period_all_runs.csv", index=False)
 
-    primary = {"train_days": primary_train, "fee_bps": primary_fee, "slippage_bps": primary_slip}
+    primary = {
+        "train_days": primary_train,
+        "validation_days": primary_val,
+        "fee_bps": primary_fee,
+        "slippage_bps": primary_slip,
+    }
+    cost_label = f"{primary_fee:g}+{primary_slip:g} bps/lado"
     multi_asset = real["symbol"].nunique() > 1
     if multi_asset:
         logger.info("Multi-ativo: %s", sorted(real["symbol"].unique()))
@@ -95,19 +113,18 @@ def main() -> None:
     else:
         by_year.to_csv(out_dir / "sharpe_by_year_primary.csv")
         md += [
-            f"## Sharpe OOS por ano — treino {primary_train}d, custo {primary_fee:g}+{primary_slip:g} bps/lado\n",
+            f"## Sharpe OOS por ano — validação {primary_val}d, custo {cost_label}\n",
             to_markdown(by_year),
             "",
         ]
         if not dist.empty:
-            rnd = dist[
-                (dist["train_days"] == primary_train)
-                & (dist["fee_bps"] == primary_fee)
-                & (dist["slippage_bps"] == primary_slip)
-            ]
+            rnd = dist
+            for col, val in primary.items():
+                rnd = rnd[rnd[col] == val]
+            sym = ["symbol"] if multi_asset else []
             rnd = rnd.assign(_all=rnd["period"] == ALL_PERIOD).sort_values(
-                [*(["symbol"] if multi_asset else []), "_all", "period"]
-            ).set_index([*(["symbol"] if multi_asset else []), "period"])[[
+                [*sym, "_all", "period"]
+            ).set_index([*sym, "period"])[[
                 "n_seeds", "sharpe_p05", "sharpe_p50", "sharpe_p95",
                 "break_even_bps_p05", "break_even_bps_p50", "break_even_bps_p95",
             ]]
@@ -141,34 +158,33 @@ def main() -> None:
 
     all_period = real[real["period"] == ALL_PERIOD]
 
-    windows_cmp = sharpe_pivot(
-        all_period,
-        columns="train_days",
-        filters={"fee_bps": primary_fee, "slippage_bps": primary_slip},
-    )
-    if not windows_cmp.empty:
-        windows_cmp.to_csv(out_dir / "train_window_comparison.csv")
+    # Lookback de seleção: uma coluna por janela de validação (treino e custo fixos).
+    lookback_filters = {
+        "train_days": primary_train, "fee_bps": primary_fee, "slippage_bps": primary_slip,
+    }
+    lookback_sharpe = sharpe_pivot(all_period, columns="validation_days", filters=lookback_filters)
+    if not lookback_sharpe.empty:
+        lookback_sharpe.to_csv(out_dir / "lookback_comparison.csv")
         md += [
-            f"## Sharpe OOS por janela de treino (dias) — custo {primary_fee:g}+{primary_slip:g} bps/lado\n",
-            to_markdown(windows_cmp),
+            f"## Sharpe OOS por janela de validação = lookback de seleção (dias) — custo {cost_label}\n",
+            to_markdown(lookback_sharpe),
             "",
         ]
 
-    windows_cbe = sharpe_pivot(
-        all_period,
-        columns="train_days",
-        values="break_even_bps",
-        filters={"fee_bps": primary_fee, "slippage_bps": primary_slip},
+    lookback_cbe = sharpe_pivot(
+        all_period, columns="validation_days", values="break_even_bps", filters=lookback_filters
     )
-    if not windows_cbe.empty:
-        windows_cbe.to_csv(out_dir / "train_window_comparison_cbe.csv")
+    if not lookback_cbe.empty:
+        lookback_cbe.to_csv(out_dir / "lookback_comparison_cbe.csv")
         md += [
-            "## CBE OOS por janela de treino (dias, bps por lado)\n",
-            to_markdown(windows_cbe),
+            "## CBE OOS por janela de validação (dias, bps por lado)\n",
+            to_markdown(lookback_cbe),
             "",
         ]
 
-    cost_cmp = all_period[all_period["train_days"] == primary_train].copy()
+    cost_cmp = all_period[
+        (all_period["train_days"] == primary_train) & (all_period["validation_days"] == primary_val)
+    ].copy()
     if cost_cmp[["fee_bps", "slippage_bps"]].drop_duplicates().shape[0] < 2:
         cost_cmp = cost_cmp.iloc[0:0]  # um único custo: o CBE já resume a sensibilidade
     if not cost_cmp.empty:
@@ -179,7 +195,7 @@ def main() -> None:
         )
         cost_pv.to_csv(out_dir / "cost_sensitivity.csv")
         md += [
-            f"## Sharpe OOS por custo (fee+slippage por lado, bps) — treino {primary_train}d\n",
+            f"## Sharpe OOS por custo (fee+slippage por lado, bps) — validação {primary_val}d\n",
             to_markdown(cost_pv),
             "",
         ]

@@ -115,6 +115,20 @@ def resolve_train_days(
     return [int(cfg["walk_forward"]["train_days"])]
 
 
+def resolve_validation_days(
+    cfg: dict[str, Any],
+    cli_validation_days: list[int] | None = None,
+    study: bool = False,
+) -> list[int]:
+    """Janelas de validação (lookback de seleção): --validation-days > study.validation_days > config."""
+    if cli_validation_days:
+        return [int(d) for d in cli_validation_days]
+    if study and cfg.get("study", {}).get("validation_days"):
+        return [int(d) for d in cfg["study"]["validation_days"]]
+    wf = cfg["walk_forward"]
+    return [int(wf.get("validation_days", wf.get("val_days")))]
+
+
 def _date_tag(value: str | None) -> str:
     return str(value).replace("-", "") if value else "na"
 
@@ -253,6 +267,7 @@ def run_experiment(
     slippage_bps: float,
     *,
     train_days: int | None = None,
+    validation_days: int | None = None,
     run_id: str | None = None,
     tag: str | None = None,
     workers: int | None = None,
@@ -263,6 +278,9 @@ def run_experiment(
     run_cfg = copy.deepcopy(cfg)
     if train_days is not None:
         run_cfg["walk_forward"]["train_days"] = int(train_days)
+    if validation_days is not None:
+        run_cfg["walk_forward"]["validation_days"] = int(validation_days)
+        run_cfg["walk_forward"].pop("val_days", None)  # alias antigo não pode sobrepor
 
     start_date, end_date = resolve_date_range(run_cfg)
     run_id = run_id or make_run_id(run_cfg, fee_bps, slippage_bps, start_date, end_date, tag)

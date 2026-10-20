@@ -99,14 +99,14 @@ codifica janelas, custo e período, ex.: `tr21_va7_te1_st1_fee2_slip2_20210101-2
 - `--costs 2:2 5:5` — cenários fee:slippage (bps por lado); sem isso usa o primeiro de `study.cost_scenarios`.
   O custo da run é o da **seleção** de parâmetros; a sensibilidade a custo é lida no custo de break-even
   (CBE, `script 07`), então o estudo do paper roda um único custo (2+2 bps).
-- `--train-days 14 21 42` — uma run por janela de treino. `--study` usa `study.*` do config (3 runs no `config.paper.yaml`).
+- `--validation-days 7 14 28` — uma run por janela de validação (o **lookback de seleção**). `--study` usa `study.*` do config (3 runs no `config.paper.yaml`). `--train-days` existe, mas o treino só aquece a estratégia e não altera os resultados.
 - `--fresh` apaga a run antes; sem ele a execução retoma/mescla. Trocar o grid ou as janelas numa pasta
   existente é recusado (impressão digital do config em `run_meta.json`).
 - `walk_forward.selection_engine`: `sliced` (padrão; refaz o backtest de treino+validação de cada janela) ou
   `single_pass` (cada combo roda uma vez na série inteira e a pontuação de validação sai de somas acumuladas;
   cerca de 40× menos CPU). A equivalência entre os dois é medida por
   `scripts/08_check_engine_equivalence.py`. Empates de pontuação (< 1e-9) vão para o primeiro combo do grid.
-- Só a janela de **validação** entra na pontuação de seleção; `train_days` apenas aquece a estratégia (não altera a escolha).
+- Só a janela de **validação** entra na pontuação de seleção; `train_days` apenas aquece a estratégia (não altera a escolha). Por isso o estudo de robustez varia `validation_days`.
 - `walk_forward.oos_start` fixa o primeiro dia de teste, então todas as janelas de treino avaliam o **mesmo** período OOS.
 - Sem custo configurado o padrão é fee=0/slippage=0 (resultado bruto); o script avisa.
 
@@ -154,8 +154,8 @@ Custos testados: 0, 2, 5, 10 bps por lado.
 
 Config do paper (`config.paper.yaml`):
 
-- Treino: 21 dias (estudo de robustez: 14, 21 e 42)
-- Validação: 7 dias
+- Treino: 21 dias (só aquece a estratégia)
+- Validação: 7 dias (estudo de robustez: 7, 14 e 28 = lookback de seleção)
 - Teste: 1 dia, passo de 1 dia, primeiro dia de teste em `oos_start` (2021-03-01)
 - Seleção por Sharpe líquido (`net_sharpe`) apenas no período de validação; posição fechada no fim do dia UTC
 - Sharpe e retorno anualizados com 365 dias/ano (cripto 24/7)

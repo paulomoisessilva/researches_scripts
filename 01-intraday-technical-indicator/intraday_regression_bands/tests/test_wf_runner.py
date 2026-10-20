@@ -17,6 +17,7 @@ from src.wf_runner import (
     parse_cost_scenarios,
     resolve_cost_scenarios,
     resolve_train_days,
+    resolve_validation_days,
 )
 from src.walk_forward import build_windows, validate_grid_features
 
@@ -69,8 +70,21 @@ class TestCostScenarios:
     def test_train_days(self):
         cfg = _paper_cfg()
         assert resolve_train_days(cfg) == [21]
-        assert resolve_train_days(cfg, study=True) == [14, 21, 42]
+        assert resolve_train_days(cfg, study=True) == [21]  # treino fixo no estudo
         assert resolve_train_days(cfg, [30, 60], study=True) == [30, 60]
+
+    def test_validation_days(self):
+        cfg = _paper_cfg()
+        assert resolve_validation_days(cfg) == [7]
+        assert resolve_validation_days(cfg, study=True) == [7, 14, 28]
+        assert resolve_validation_days(cfg, [5, 10], study=True) == [5, 10]
+
+    def test_validation_days_legacy_alias(self):
+
+        cfg = _paper_cfg()
+        cfg["walk_forward"].pop("validation_days")
+        cfg["walk_forward"]["val_days"] = 9
+        assert resolve_validation_days(cfg) == [9]
 
 
 class TestRunId:
@@ -78,6 +92,14 @@ class TestRunId:
         cfg = _paper_cfg()
         rid = make_run_id(cfg, 2.0, 2.0, "2021-01-01", "2025-12-31")
         assert rid == "tr21_va7_te1_st1_fee2_slip2_20210101-20251231_oos20210301"
+
+    def test_run_id_differs_by_validation_days(self):
+        cfg = _paper_cfg()
+        a = make_run_id(cfg, 2, 2, "2021-01-01", "2025-12-31")
+        cfg2 = copy.deepcopy(cfg)
+        cfg2["walk_forward"]["validation_days"] = 28
+        b = make_run_id(cfg2, 2, 2, "2021-01-01", "2025-12-31")
+        assert a != b and "va7" in a and "va28" in b
 
     def test_run_id_differs_by_train_days_and_cost(self):
         cfg = _paper_cfg()
@@ -124,6 +146,16 @@ class TestOosStart:
         assert [w.test_start for w in a] == [w.test_start for w in b]
         assert a[0].test_start == pd.Timestamp("2021-03-01", tz="UTC")
         assert a[0].window_id == b[0].window_id == 0
+
+    def test_same_oos_period_across_validation_days(self):
+        df = _daily_df(120)
+        a = build_windows(df, 21, 7, 1, 1, oos_start="2021-03-01")
+        b = build_windows(df, 21, 28, 1, 1, oos_start="2021-03-01")
+        assert [w.test_start for w in a] == [w.test_start for w in b]
+        # a validação mais longa começa antes, mas termina no mesmo ponto
+        assert a[0].val_end == b[0].val_end
+        assert (a[0].val_end - a[0].val_start).days == 7
+        assert (b[0].val_end - b[0].val_start).days == 28
 
     def test_train_precedes_validation_and_test(self):
         df = _daily_df(120)

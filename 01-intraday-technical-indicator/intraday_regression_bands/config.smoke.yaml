@@ -64,9 +64,8 @@ walk_forward:
   save_random_equity: true
   runs_dir: "results/smoke/walk_forward"
 
-# (train_days não altera a seleção; aqui serve só para exercitar o --study com 2 runs)
 study:
-  train_days: [10, 14]
+  validation_days: [3, 7]
   cost_scenarios:
     - [2, 2]
 
