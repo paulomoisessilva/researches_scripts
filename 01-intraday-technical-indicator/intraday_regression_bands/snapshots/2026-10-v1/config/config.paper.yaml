@@ -1,0 +1,96 @@
+# Config do paper: BTCUSDT 15m, 2021-2025, walk-forward diário.
+#
+# Uso:
+#   python scripts/05_run_walk_forward.py --config config.paper.yaml           # run primária
+#   python scripts/05_run_walk_forward.py --config config.paper.yaml --study   # janelas x custos
+#   python scripts/07_paper_tables.py                                          # tabelas do paper
+#
+# O grid de features é IDÊNTICO ao do config.yaml para reaproveitar o cache
+# data/features/BTCUSDT_15m_features.parquet (o script 05 aborta se faltar coluna).
+
+project:
+  name: "intraday_regression_bands_paper"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT"]
+  intervals: ["15m"]
+  start_date: "2021-01-01"
+  end_date: "2025-12-31"
+  raw_dir: "data/raw/binance"
+  processed_dir: "data/processed"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0, 2, 5, 10]
+  slippage_bps_per_side: [0, 2, 5, 10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  rsi_windows: [14, 21]
+  stochastic_windows: [14, 21]
+  bollinger_windows: [20, 50, 100]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5]
+  regression_windows: [50, 100, 150, 200]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5]
+
+strategies:
+  - bollinger
+  - regression_bands
+  - return_residuals
+  - random
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [0.7, 0.8, 0.9, 1.0]
+  entry_short_z: [0.7, 0.8, 0.9, 1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  # Janela rolante curta: os parâmetros "esquecem" regimes antigos.
+  train_days: 21
+  validation_days: 7
+  test_days: 1
+  step_days: 1
+  # Primeiro dia de teste fixo: runs com validation_days diferentes avaliam o MESMO
+  # período OOS (window_id = mesmo dia). Precisa de >= train_days+validation_days
+  # de histórico antes (o maior caso do estudo é 21+28 = 49 dias < 59 dias até aqui).
+  oos_start: "2021-03-01"
+  close_position_end_of_day: true
+  selection_metric: "net_sharpe"
+  # single_pass: cada combo roda 1x na série inteira e a validação sai de somas acumuladas
+  # (mesmas escolhas do motor "sliced" em 300 janelas reais; ver scripts/08_check_engine_equivalence.py).
+  selection_engine: "single_pass"
+  parallel_workers: 8
+  # 100 seeds x ~1800 janelas geram dezenas de milhões de linhas de equity por run.
+  save_random_equity: false
+  # Placebo reaproveitado entre runs com mesmo oos_start/custo/seeds/dados (results/cache/random).
+  random_cache: true
+
+# Estudo de robustez (--study): lookback da seleção de parâmetros.
+# A seleção pontua SÓ a janela de validação; o treino apenas aquece a estratégia e não altera
+# a escolha (verificado: train_days 10 e 14 deram resultados idênticos). Por isso o estudo varia
+# validation_days (quantos dias recentes decidem os parâmetros), com train_days fixo.
+# Máximo de histórico exigido: train_days + max(validation_days) = 21 + 28 = 49 dias < oos_start.
+study:
+  validation_days: [7, 14, 28]
+  # [fee_bps, slippage_bps] por lado usados na SELEÇÃO de parâmetros (net_sharpe na
+  # validação) e nas métricas líquidas. A sensibilidade a custo é reportada pelo
+  # custo de break-even (CBE), não por uma varredura de cenários: para posições
+  # fixas o retorno líquido é linear no custo. Para varrer custos mesmo assim,
+  # liste mais cenários aqui (o PRIMEIRO é o da run sem --study) ou use --costs.
+  cost_scenarios:
+    - [2, 2]
+
+random_baseline:
+  n_seeds: 100
+  seed_base: 0
+  trade_prob: 0.05

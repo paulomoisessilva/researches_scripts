@@ -1,0 +1,56 @@
+{
+  "run_id": "tr21_va14_te1_st1_fee2_slip2_20210101-20251231_oos20210301",
+  "fingerprint": "6bbbe341be6b",
+  "fee_bps": 2.0,
+  "slippage_bps": 2.0,
+  "train_days": 21,
+  "validation_days": 14,
+  "test_days": 1,
+  "step_days": 1,
+  "oos_start": "2021-03-01",
+  "selection_metric": "net_sharpe",
+  "close_position_end_of_day": true,
+  "start_date": "2021-01-01",
+  "end_date": "2025-12-31",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "intervals": [
+    "15m"
+  ],
+  "strategies": [
+    "bollinger",
+    "regression_bands",
+    "return_residuals",
+    "random"
+  ],
+  "random_baseline": {
+    "n_seeds": 100,
+    "seed_base": 0,
+    "trade_prob": 0.05
+  },
+  "annualization_days_per_year": 365,
+  "config_path": "config.paper.yaml",
+  "created_at": "2026-10-21T02:51:28+00:00",
+  "n_windows": {
+    "BTCUSDT_15m_bollinger": 1766,
+    "BTCUSDT_15m_regression_bands": 1766,
+    "BTCUSDT_15m_return_residuals": 1766,
+    "BTCUSDT_15m_random": 1766,
+    "ETHUSDT_15m_bollinger": 1766,
+    "ETHUSDT_15m_regression_bands": 1766,
+    "ETHUSDT_15m_return_residuals": 1766,
+    "ETHUSDT_15m_random": 1766,
+    "SOLUSDT_15m_bollinger": 1766,
+    "SOLUSDT_15m_regression_bands": 1766,
+    "SOLUSDT_15m_return_residuals": 1766,
+    "SOLUSDT_15m_random": 1766
+  },
+  "random_cache": {
+    "BTCUSDT_15m": "hit",
+    "ETHUSDT_15m": "hit",
+    "SOLUSDT_15m": "hit"
+  }
+}

@@ -1,0 +1,4 @@
+strategy,n_windows,n_combos,same_best_params_rate,n_windows_best_differs,max_regret_when_differs,score_equal_rate_all,same_start_state_rate,score_equal_rate_same_state,score_equal_rate_diff_state,max_abs_score_diff,max_abs_score_diff_same_state,seconds
+bollinger,100,240,1.0,0,0.0,1.0,1.0,1.0,,8.045297761327674e-11,8.045297761327674e-11,143.3
+regression_bands,100,320,1.0,0,0.0,1.0,1.0,1.0,,5.502087674358336e-11,5.502087674358336e-11,188.3
+return_residuals,100,320,1.0,0,0.0,1.0,1.0,1.0,,2.7472424335428514e-10,2.7472424335428514e-10,218.0

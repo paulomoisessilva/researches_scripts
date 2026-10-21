@@ -1,0 +1,3 @@
+strategy,n_windows,n_combos,same_best_params_rate,n_windows_best_differs,max_regret_when_differs,score_equal_rate_all,same_start_state_rate,score_equal_rate_same_state,score_equal_rate_diff_state,max_abs_score_diff,max_abs_score_diff_same_state,seconds
+regression_bands,60,320,1.0,0,0.0,1.0,1.0,1.0,,3.7417180465126876e-11,3.7417180465126876e-11,102.0
+return_residuals,60,320,1.0,0,0.0,1.0,1.0,1.0,,2.0229151687090052e-10,2.0229151687090052e-10,120.1

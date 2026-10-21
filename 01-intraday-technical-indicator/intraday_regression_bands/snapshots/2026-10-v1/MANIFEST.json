@@ -1,0 +1,49 @@
+{
+  "name": "2026-10-v1",
+  "created_at": "2026-10-21T04:11:29+00:00",
+  "code": {
+    "commit": "fa9a403deb63bc67c6d6bbb502ccfddc6c9b353f",
+    "branch": "main",
+    "has_uncommitted_changes": true,
+    "last_commit_message": "Add Reality Check/SPA, fix per-window turnover, support extending runs with assets"
+  },
+  "data_processed": {
+    "BTCUSDT_15m.parquet": {
+      "sha256": "1332c7ab285f40b1d73afeec79086cab46364999f96ebc5b3a90d897a99f30be",
+      "bytes": 13925708
+    },
+    "ETHUSDT_15m.parquet": {
+      "sha256": "2718a14752778164b2604f5bc47b8638ce7ba5188d58a1d086af4f346b19a83c",
+      "bytes": 13520960
+    },
+    "SOLUSDT_15m.parquet": {
+      "sha256": "34f89ff274fffbb81cc47b7ec7c18a2ebb788a188b15e33910e10b9602d8ad3a",
+      "bytes": 11932884
+    }
+  },
+  "environment": {
+    "python": "3.12.10",
+    "pandas": "2.3.2",
+    "numpy": "1.26.0",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "files": [
+    "config/config.paper.yaml",
+    "engine_check/engine_check_summary_BTCUSDT_15m.csv",
+    "engine_check/engine_check_summary_BTCUSDT_15m_train1.csv",
+    "paper/cbe_by_year_primary.csv",
+    "paper/cbe_vs_random_primary.csv",
+    "paper/lookback_comparison.csv",
+    "paper/lookback_comparison_cbe.csv",
+    "paper/oos_by_period_all_runs.csv",
+    "paper/paper_tables.md",
+    "paper/random_by_period_all_runs.csv",
+    "paper/reality_check.csv",
+    "paper/reality_check.md",
+    "paper/reality_check_block_sensitivity.csv",
+    "paper/sharpe_by_year_primary.csv",
+    "runs/tr21_va14_te1_st1_fee2_slip2_20210101-20251231_oos20210301/run_meta.json",
+    "runs/tr21_va28_te1_st1_fee2_slip2_20210101-20251231_oos20210301/run_meta.json",
+    "runs/tr21_va7_te1_st1_fee2_slip2_20210101-20251231_oos20210301/run_meta.json"
+  ]
+}
