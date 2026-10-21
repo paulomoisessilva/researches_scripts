@@ -38,13 +38,12 @@ from src.inference import (
     stationary_bootstrap_indices,
 )
 from src.utils import ensure_dir, setup_logger
-from src.wf_analysis import list_runs, to_markdown
+from src.wf_analysis import list_runs, load_candidate_windows, to_markdown
 from src.wf_runner import resolve_cost_scenarios, resolve_runs_root, resolve_train_days
 
 logger = setup_logger("09_reality_check")
 
 CANDIDATE_COLS = ["symbol", "strategy", "validation_days"]
-READ_COLS = ["window_id", "strategy", "symbol", "test_date", "sum_gross_ret", "turnover_units"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,26 +60,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--blocks-sensitivity", nargs="+", type=float, default=[1, 5, 10, 20, 40])
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
-
-
-def load_candidates(run_dirs: list[Path], train_days: int, run_cost: tuple[float, float]) -> pd.DataFrame:
-    """Janelas diárias das estratégias reais das runs que casam com treino e custo."""
-    import json
-
-    frames = []
-    for run_dir in run_dirs:
-        meta = json.loads((run_dir / "run_meta.json").read_text(encoding="utf-8"))
-        if meta["train_days"] != train_days or (meta["fee_bps"], meta["slippage_bps"]) != run_cost:
-            continue
-        if meta["test_days"] != 1:
-            logger.warning("%s: test_days=%s (as observações não são diárias).", run_dir.name, meta["test_days"])
-        w = pd.read_csv(run_dir / "walk_forward_results.csv", usecols=READ_COLS)
-        w = w[w["strategy"] != "random"].copy()
-        w["validation_days"] = meta["validation_days"]
-        frames.append(w)
-    if not frames:
-        raise SystemExit("Nenhuma run casa com o treino/custo pedidos. Rode o script 05 (--study) antes.")
-    return pd.concat(frames, ignore_index=True)
 
 
 def label(key: tuple) -> str:
@@ -111,7 +90,7 @@ def main() -> None:
     run_cost = resolve_cost_scenarios(cfg, [args.costs_run] if args.costs_run else None)[0]
     run_cost_total = run_cost[0] + run_cost[1]
 
-    windows = load_candidates(list_runs(runs_root), train_days, run_cost)
+    windows = load_candidate_windows(list_runs(runs_root), train_days, run_cost)
     panels = candidate_panels(windows, CANDIDATE_COLS)
     keys = sorted(panels)
     fams = families(keys)

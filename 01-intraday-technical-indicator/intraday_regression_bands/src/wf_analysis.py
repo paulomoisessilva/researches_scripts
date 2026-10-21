@@ -76,9 +76,21 @@ def percentile_rank(sample: pd.Series, value: float) -> float:
     return float(((vals < value).sum() + 0.5 * (vals == value).sum()) / len(vals))
 
 
-def _with_period(df: pd.DataFrame) -> pd.DataFrame:
+PERIOD_CHOICES = ("year", "quarter", "month")
+
+
+def _with_period(df: pd.DataFrame, freq: str = "year") -> pd.DataFrame:
+    """Rotula cada janela diária com o período (``2024``, ``2024-Q3`` ou ``2024-07``)."""
+    if freq not in PERIOD_CHOICES:
+        raise ValueError(f"period deve ser um de {PERIOD_CHOICES}, recebido '{freq}'.")
     out = df.copy()
-    out["year"] = pd.to_datetime(out["test_date"]).dt.year.astype("Int64")
+    dt = pd.to_datetime(out["test_date"])
+    if freq == "year":
+        out["_period"] = dt.dt.year.astype(str)
+    elif freq == "quarter":
+        out["_period"] = dt.dt.year.astype(str) + "-Q" + dt.dt.quarter.astype(str)
+    else:
+        out["_period"] = dt.dt.strftime("%Y-%m")
     return out
 
 
@@ -90,8 +102,8 @@ def _grouped_metrics(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
         base = dict(zip(keys, key_vals))
         interval = str(grp["interval"].iloc[0])
         rows.append({**base, "period": ALL_PERIOD, **metrics_from_moments(grp, interval)})
-        for year, ygrp in grp.groupby("year"):
-            rows.append({**base, "period": str(int(year)), **metrics_from_moments(ygrp, interval)})
+        for label, ygrp in grp.groupby("_period"):
+            rows.append({**base, "period": label, **metrics_from_moments(ygrp, interval)})
     return pd.DataFrame(rows)
 
 
@@ -114,7 +126,7 @@ def load_run(run_dir: str | Path) -> tuple[dict, pd.DataFrame]:
     return meta, df
 
 
-def run_tables(df_windows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_tables(df_windows: pd.DataFrame, period: str = "year") -> tuple[pd.DataFrame, pd.DataFrame]:
     """Tabelas de uma run: estratégias reais por período e distribuição do random.
 
     Retorna ``(real, random_dist)``:
@@ -125,7 +137,7 @@ def run_tables(df_windows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         abaixo da estratégia, empates contando metade).
       - ``random_dist``: por (symbol, interval, period), distribuição entre seeds.
     """
-    df = _with_period(df_windows)
+    df = _with_period(df_windows, period)
     keys = ["symbol", "interval"]
 
     real = df[df["strategy"] != _RANDOM]
@@ -202,13 +214,16 @@ def list_runs(runs_root: str | Path) -> list[Path]:
     )
 
 
-def collect_runs(run_dirs: Iterable[str | Path]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def collect_runs(
+    run_dirs: Iterable[str | Path],
+    period: str = "year",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Concatena as tabelas de todas as runs, anotando janela de treino e custo."""
     reals: list[pd.DataFrame] = []
     dists: list[pd.DataFrame] = []
     for run_dir in run_dirs:
         meta, df = load_run(run_dir)
-        real, dist = run_tables(df)
+        real, dist = run_tables(df, period)
         for tbl, bucket in ((real, reals), (dist, dists)):
             if tbl.empty:
                 continue
@@ -261,3 +276,36 @@ def to_markdown(df: pd.DataFrame, floatfmt: str = "{:.2f}") -> str:
                 cells.append(str(v))
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+_CANDIDATE_READ_COLS = ["window_id", "strategy", "symbol", "test_date", "sum_gross_ret", "turnover_units"]
+
+
+def load_candidate_windows(
+    run_dirs: Iterable[str | Path],
+    train_days: int,
+    run_cost: tuple[float, float],
+) -> pd.DataFrame:
+    """Janelas diárias das estratégias reais das runs que casam com treino e custo.
+
+    Acrescenta ``validation_days`` (lookback) de cada run. Levanta ``SystemExit`` se nenhuma casar.
+    """
+    import logging
+
+    frames = []
+    for run_dir in run_dirs:
+        run_dir = Path(run_dir)
+        meta = json.loads((run_dir / "run_meta.json").read_text(encoding="utf-8"))
+        if meta["train_days"] != train_days or (meta["fee_bps"], meta["slippage_bps"]) != tuple(run_cost):
+            continue
+        if meta["test_days"] != 1:
+            logging.getLogger(__name__).warning(
+                "%s: test_days=%s (as observações não são diárias).", run_dir.name, meta["test_days"]
+            )
+        w = pd.read_csv(run_dir / "walk_forward_results.csv", usecols=_CANDIDATE_READ_COLS)
+        w = w[w["strategy"] != _RANDOM].copy()
+        w["validation_days"] = meta["validation_days"]
+        frames.append(w)
+    if not frames:
+        raise SystemExit("Nenhuma run casa com o treino/custo pedidos. Rode o script 05 (--study) antes.")
+    return pd.concat(frames, ignore_index=True)

@@ -313,3 +313,30 @@ class TestMultiAsset:
         assert set(meta["n_windows"]) >= {"AAA_15m_bollinger", "BBB_15m_bollinger", "AAA_15m_random", "BBB_15m_random"}
         wf = pd.read_csv(second / "walk_forward_results.csv")
         assert set(wf["symbol"]) == {"AAA", "BBB"}
+
+
+class TestPeriodGranularity:
+    def test_month_and_quarter_labels(self, tmp_path):
+        _fake_run(tmp_path)  # dias: 2021-12-30, 2021-12-31, 2022-01-01, 2022-01-02
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+
+        month, _ = run_tables(df, period="month")
+        assert set(month["period"]) == {ALL_PERIOD, "2021-12", "2022-01"}
+        m = month.set_index(["strategy", "period"])
+        assert m.loc[("bollinger", "2021-12"), "n_days"] == 2 and m.loc[("bollinger", "2022-01"), "n_days"] == 2
+
+        quarter, _ = run_tables(df, period="quarter")
+        assert set(quarter["period"]) == {ALL_PERIOD, "2021-Q4", "2022-Q1"}
+
+    def test_all_period_is_independent_of_granularity(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        a = run_tables(df, period="year")[0].query("period == 'ALL' and strategy == 'bollinger'")
+        b = run_tables(df, period="month")[0].query("period == 'ALL' and strategy == 'bollinger'")
+        assert a["sharpe"].iloc[0] == pytest.approx(b["sharpe"].iloc[0])
+
+    def test_invalid_period_raises(self, tmp_path):
+        _fake_run(tmp_path)
+        df = pd.read_csv(tmp_path / "walk_forward_results.csv")
+        with pytest.raises(ValueError):
+            run_tables(df, period="week")

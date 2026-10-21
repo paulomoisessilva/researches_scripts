@@ -1,0 +1,81 @@
+# Piloto 1m: BTCUSDT, jan-jun/2025 (período disjunto da fumaça nov-dez/2025, que serviu para
+# escolher o grid de k). Definido ANTES de ver resultados do piloto:
+#   estratégias : bollinger e regression_bands (log-preço)
+#   janelas     : 25, 50, 75, 100 barras de 1m
+#   k           : 1,5 a 7 (passo 0,5)  -> 48 combos por estratégia
+#   entrada     : reversão confirmada, limiar fixo em 1,0; saída na linha central
+#   lookback    : validation_days 1, 2 e 3 (o treino só aquece)
+#   custo       : 2+2 bps por lado (RC/SPA reavalia 0..8 bps); sem placebo `random`
+#   fechamento  : SEM fechamento diário (24h contínuo); variante de custo do fechamento
+#
+#   python scripts/01_download_data.py --config config.pilot_1m_noeod.yaml
+#   python scripts/02_prepare_data.py  --config config.pilot_1m_noeod.yaml
+#   python scripts/05_run_walk_forward.py --config config.pilot_1m_noeod.yaml --study --fresh --workers 14
+#   python scripts/07_paper_tables.py  --config config.pilot_1m_noeod.yaml
+#   python scripts/09_reality_check.py --config config.pilot_1m_noeod.yaml
+
+project:
+  name: "intraday_regression_bands_pilot_1m_noeod"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT"]
+  intervals: ["1m"]
+  start_date: "2025-01-01"
+  end_date: "2025-06-30"
+  raw_dir: "data/raw/binance"
+  processed_dir: "data/processed"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0, 2, 5, 10]
+  slippage_bps_per_side: [0, 2, 5, 10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [25, 50, 75, 100]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+  regression_windows: [25, 50, 75, 100]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+
+strategies:
+  - bollinger
+  - regression_bands
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [1.0]
+  entry_short_z: [1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  # Lookback de seleção = validation_days (o treino só aquece a estratégia).
+  train_days: 2
+  validation_days: 2   # run primária; o estudo varia em study.validation_days
+  test_days: 1
+  step_days: 1
+  oos_start: "2025-01-06"        # histórico mínimo: train_days + max(validation_days) = 5 dias
+  close_position_end_of_day: false
+  selection_metric: "net_sharpe"
+  selection_engine: "single_pass"
+  parallel_workers: 8
+  save_random_equity: false
+  runs_dir: "results/pilot_1m_noeod/walk_forward"
+
+study:
+  validation_days: [1, 2, 3]
+  cost_scenarios:
+    - [2, 2]
+
+random_baseline:
+  n_seeds: 10
+  seed_base: 0
+  trade_prob: 0.05

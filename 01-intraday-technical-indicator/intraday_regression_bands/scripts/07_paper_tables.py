@@ -58,6 +58,8 @@ def parse_args() -> argparse.Namespace:
                         help="Janela de treino da run primária (default: do config).")
     parser.add_argument("--validation-days", type=int, default=None,
                         help="Janela de validação (lookback de seleção) da run primária (default: do config).")
+    parser.add_argument("--period", choices=["year", "quarter", "month"], default="year",
+                        help="Granularidade das tabelas por período (default: year).")
     parser.add_argument("--costs", type=str, default=None, metavar="FEE:SLIP",
                         help="Custo da run primária (default: primeiro de study.cost_scenarios).")
     return parser.parse_args()
@@ -75,7 +77,8 @@ def main() -> None:
         raise SystemExit(f"Nenhuma run em {runs_root}. Rode scripts/05_run_walk_forward.py primeiro.")
     logger.info("%d run(s) encontradas em %s", len(run_dirs), runs_root)
 
-    real, dist = collect_runs(run_dirs)
+    real, dist = collect_runs(run_dirs, period=args.period)
+    period_label = {"year": "ano", "quarter": "trimestre", "month": "mês"}[args.period]
     if real.empty:
         raise SystemExit("Runs sem estratégias reais para tabular.")
 
@@ -111,9 +114,9 @@ def main() -> None:
     if by_year.empty:
         logger.warning("Run primária não encontrada (%s); tabela por ano omitida.", primary)
     else:
-        by_year.to_csv(out_dir / "sharpe_by_year_primary.csv")
+        by_year.to_csv(out_dir / f"sharpe_by_{args.period}_primary.csv")
         md += [
-            f"## Sharpe OOS por ano — validação {primary_val}d, custo {cost_label}\n",
+            f"## Sharpe OOS por {period_label} — validação {primary_val}d, custo {cost_label}\n",
             to_markdown(by_year),
             "",
         ]
@@ -132,9 +135,9 @@ def main() -> None:
 
     cbe_by_year = sharpe_pivot(real, values="break_even_bps", filters=primary)
     if not cbe_by_year.empty:
-        cbe_by_year.to_csv(out_dir / "cbe_by_year_primary.csv")
+        cbe_by_year.to_csv(out_dir / f"cbe_by_{args.period}_primary.csv")
         md += [
-            "## Custo de break-even por ano (bps por lado que zeram o retorno)\n",
+            f"## Custo de break-even por {period_label} (bps por lado que zeram o retorno)\n",
             to_markdown(cbe_by_year),
             "",
         ]
