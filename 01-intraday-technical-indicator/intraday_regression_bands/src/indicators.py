@@ -105,6 +105,64 @@ def bollinger_bands(
 # ---------------------------------------------------------------------------
 
 
+def rolling_ols_last(
+    values: np.ndarray,
+    window: int,
+    chunk: int = 20_000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """OLS rolling de ``values`` contra o tempo (0..window-1) dentro de cada janela.
+
+    Devolve, para cada posição ``i >= window-1``, o valor ajustado no último ponto da janela e o
+    desvio padrão dos resíduos (ddof=2). Equivale a rodar ``np.linalg.lstsq`` por janela, mas
+    vetorizado: em blocos, centra cada janela e usa a inclinação ``sum(tc*y)/sum(tc^2)``.
+    Janelas com NaN resultam em NaN.
+    """
+    values = np.asarray(values, dtype=float)
+    n = len(values)
+    fitted = np.full(n, np.nan)
+    std_res = np.full(n, np.nan)
+    if n < window or window < 2:
+        return fitted, std_res
+
+    t = np.arange(window, dtype=float)
+    tc = t - t.mean()
+    stt = float((tc ** 2).sum())
+    view = np.lib.stride_tricks.sliding_window_view(values, window)  # (n - window + 1, window)
+    n_windows = view.shape[0]
+    for start in range(0, n_windows, chunk):
+        seg = view[start:start + chunk]
+        y_mean = seg.mean(axis=1)
+        yc = seg - y_mean[:, None]
+        slope = (yc @ tc) / stt
+        resid = yc - slope[:, None] * tc[None, :]
+        sse = (resid ** 2).sum(axis=1)
+        end = start + len(seg)
+        fitted[window - 1 + start: window - 1 + end] = y_mean + slope * tc[-1]
+        std_res[window - 1 + start: window - 1 + end] = (
+            np.sqrt(sse / (window - 2)) if window > 2 else 0.0
+        )
+    return fitted, std_res
+
+
+def regression_bands_multi_k(
+    log_price: pd.Series,
+    window: int,
+    ks: list[float],
+) -> tuple[pd.Series, dict[float, tuple[pd.Series, pd.Series]]]:
+    """Calcula a regressão rolling UMA vez e devolve ``(fitted, {k: (upper, lower)})``."""
+    fitted, std_res = rolling_ols_last(log_price.values, window)
+    idx = log_price.index
+    fitted_s = pd.Series(fitted, index=idx, name="reg_fitted")
+    bands = {
+        k: (
+            pd.Series(fitted + k * std_res, index=idx, name="reg_upper"),
+            pd.Series(fitted - k * std_res, index=idx, name="reg_lower"),
+        )
+        for k in ks
+    }
+    return fitted_s, bands
+
+
 def regression_bands(
     log_price: pd.Series,
     window: int = 100,
@@ -119,35 +177,9 @@ def regression_bands(
     -------
     (upper, fitted, lower)
     """
-    n = len(log_price)
-    fitted = np.full(n, np.nan)
-    upper = np.full(n, np.nan)
-    lower = np.full(n, np.nan)
-
-    values = log_price.values
-
-    for i in range(window - 1, n):
-        segment = values[i - window + 1 : i + 1]
-        t = np.arange(window, dtype=float)
-        # OLS: [1, t] @ [alpha, beta]
-        A = np.column_stack([np.ones(window), t])
-        try:
-            coef, *_ = np.linalg.lstsq(A, segment, rcond=None)
-        except np.linalg.LinAlgError:
-            continue
-        pred = A @ coef
-        residuals = segment - pred
-        std_res = residuals.std(ddof=2) if window > 2 else 0.0
-        fitted[i] = pred[-1]
-        upper[i] = fitted[i] + k * std_res
-        lower[i] = fitted[i] - k * std_res
-
-    idx = log_price.index
-    return (
-        pd.Series(upper, index=idx, name="reg_upper"),
-        pd.Series(fitted, index=idx, name="reg_fitted"),
-        pd.Series(lower, index=idx, name="reg_lower"),
-    )
+    fitted, bands = regression_bands_multi_k(log_price, window, [k])
+    upper, lower = bands[k]
+    return upper, fitted, lower
 
 
 # ---------------------------------------------------------------------------
@@ -371,11 +403,11 @@ def _compute_bollinger_features(close: pd.Series, feat_cfg: dict) -> dict[str, p
 def _compute_regression_features(log_price: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
     new_cols: dict[str, pd.Series] = {}
     for w in feat_cfg["regression_windows"]:
-        for k in feat_cfg["regression_k"]:
+        fitted, bands = regression_bands_multi_k(log_price, w, list(feat_cfg["regression_k"]))
+        new_cols[f"reg_fitted_{w}"] = fitted
+        for k, (upper, lower) in bands.items():
             k_str = str(k).replace(".", "")
-            upper, fitted, lower = regression_bands(log_price, window=w, k=k)
             new_cols[f"reg_upper_{w}_{k_str}"] = upper
-            new_cols[f"reg_fitted_{w}"] = fitted
             new_cols[f"reg_lower_{w}_{k_str}"] = lower
     return new_cols
 

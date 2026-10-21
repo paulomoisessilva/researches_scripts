@@ -1,0 +1,77 @@
+# Fumaça do piloto 1m (checagem de bugs, ~2 min): BTCUSDT 1m, nov-dez/2025.
+#
+#   python scripts/01_download_data.py --config config.smoke_1m.yaml
+#   python scripts/02_prepare_data.py  --config config.smoke_1m.yaml
+#   python scripts/05_run_walk_forward.py --config config.smoke_1m.yaml --study --fresh
+#   python scripts/07_paper_tables.py  --config config.smoke_1m.yaml
+#   python scripts/09_reality_check.py --config config.smoke_1m.yaml --costs-run 2:2
+#
+# Grid definido ANTES de olhar resultados (ver README): janelas 25/50/75/100 barras de 1m,
+# k de 1,5 a 5, limiar de entrada fixo em 1,0, saída na linha central, reversão confirmada.
+# Sem placebo `random`. Saídas isoladas em results/smoke_1m/.
+
+project:
+  name: "intraday_regression_bands_smoke_1m"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT"]
+  intervals: ["1m"]
+  start_date: "2025-11-01"
+  end_date: "2025-12-31"
+  raw_dir: "data/raw/binance"
+  processed_dir: "data/processed"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0, 2, 5, 10]
+  slippage_bps_per_side: [0, 2, 5, 10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [25, 50, 75, 100]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+  regression_windows: [25, 50, 75, 100]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
+strategies:
+  - bollinger
+  - regression_bands
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [1.0]
+  entry_short_z: [1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  # Lookback de seleção = validation_days (o treino só aquece a estratégia).
+  train_days: 2
+  validation_days: 2
+  test_days: 1
+  step_days: 1
+  oos_start: "2025-11-05"        # precisa de train_days + validation_days = 4 dias de histórico
+  close_position_end_of_day: true
+  selection_metric: "net_sharpe"
+  selection_engine: "single_pass"
+  parallel_workers: 8
+  save_random_equity: false
+  runs_dir: "results/smoke_1m/walk_forward"
+
+study:
+  validation_days: [2]
+  cost_scenarios:
+    - [2, 2]
+
+random_baseline:
+  n_seeds: 10
+  seed_base: 0
+  trade_prob: 0.05
