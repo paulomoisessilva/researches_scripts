@@ -1,0 +1,6 @@
+mean_block_days,cost_bps_per_side,rc_pvalue,spa_pvalue_consistent,spa_pvalue_upper
+1,4.0,1.0,1.0,1.0
+5,4.0,1.0,1.0,1.0
+10,4.0,1.0,1.0,1.0
+20,4.0,1.0,1.0,1.0
+40,4.0,1.0,1.0,1.0

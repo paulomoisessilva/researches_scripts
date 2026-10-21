@@ -1,0 +1,8 @@
+cost_bps_per_side,n_candidates,n_days,best_candidate,best_mean_bps_per_day,rc_pvalue,spa_pvalue_consistent
+0,12,175,config.pilot_1m|bollinger|1,2.8693213503930184,0.7114,0.6962
+1,12,175,config.pilot_1m|bollinger|1,-3.9992500781784126,0.9756,1.0
+2,12,175,config.pilot_1m_noeod|regression_bands|3,-8.490407686544373,0.9988,1.0
+3,12,175,config.pilot_1m_noeod|regression_bands|3,-11.941836257972943,1.0,1.0
+4,12,175,config.pilot_1m_noeod|regression_bands|3,-15.393264829401515,1.0,1.0
+6,12,175,config.pilot_1m_noeod|regression_bands|3,-22.296121972258657,1.0,1.0
+8,12,175,config.pilot_1m_noeod|regression_bands|3,-29.19897911511579,1.0,1.0

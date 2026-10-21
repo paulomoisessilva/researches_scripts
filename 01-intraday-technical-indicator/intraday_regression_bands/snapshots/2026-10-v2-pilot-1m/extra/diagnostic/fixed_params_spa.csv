@@ -1,0 +1,8 @@
+cost_bps_per_side,n_candidates,best,best_mean_bps_per_day,rc_pvalue,spa_pvalue_consistent
+0,96,bollinger|w25|k2.0,36.853201701998984,0.001,0.0038
+1,96,regression_bands|w75|k6.0,1.737430146093322,0.9978,0.2024
+2,96,regression_bands|w75|k6.0,1.5774301460933218,0.9984,0.182
+3,96,regression_bands|w75|k6.0,1.4174301460933219,0.9988,0.2326
+4,96,regression_bands|w75|k6.0,1.2574301460933217,0.9986,0.2606
+6,96,regression_bands|w75|k6.0,0.9374301460933222,0.9992,0.4074
+8,96,regression_bands|w100|k7.0,0.7405930701665907,0.9994,0.5492

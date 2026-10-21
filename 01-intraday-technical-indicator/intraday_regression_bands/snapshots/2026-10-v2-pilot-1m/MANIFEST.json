@@ -1,0 +1,78 @@
+{
+  "name": "2026-10-v2-pilot-1m",
+  "created_at": "2026-10-21T05:03:28+00:00",
+  "code": {
+    "commit": "d28f73ef0d327913bb7e3c719a0de157fa464c19",
+    "branch": "main",
+    "has_uncommitted_changes": true,
+    "last_commit_message": "Pre-register the 1m pilot: configs, decision rule and monthly breakdown"
+  },
+  "data_processed": {
+    "BTCUSDT_15m.parquet": {
+      "sha256": "1332c7ab285f40b1d73afeec79086cab46364999f96ebc5b3a90d897a99f30be",
+      "bytes": 13925708
+    },
+    "BTCUSDT_1m.parquet": {
+      "sha256": "fb243c570e3d118d5e512478c79d0034db28d4e7e2bc2e6d5435542f26bebb93",
+      "bytes": 21916287
+    },
+    "ETHUSDT_15m.parquet": {
+      "sha256": "2718a14752778164b2604f5bc47b8638ce7ba5188d58a1d086af4f346b19a83c",
+      "bytes": 13520960
+    },
+    "SOLUSDT_15m.parquet": {
+      "sha256": "34f89ff274fffbb81cc47b7ec7c18a2ebb788a188b15e33910e10b9602d8ad3a",
+      "bytes": 11932884
+    }
+  },
+  "environment": {
+    "python": "3.12.10",
+    "pandas": "2.3.2",
+    "numpy": "1.26.0",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "files": [
+    "config/config.pilot_1m.yaml",
+    "extra/diagnostic/fixed_params.csv",
+    "extra/diagnostic/fixed_params.md",
+    "extra/diagnostic/fixed_params_heatmaps.png",
+    "extra/diagnostic/fixed_params_spa.csv",
+    "extra/pilot_1m_noeod/paper/cbe_by_month_primary.csv",
+    "extra/pilot_1m_noeod/paper/lookback_comparison.csv",
+    "extra/pilot_1m_noeod/paper/lookback_comparison_cbe.csv",
+    "extra/pilot_1m_noeod/paper/oos_by_period_all_runs.csv",
+    "extra/pilot_1m_noeod/paper/paper_tables.md",
+    "extra/pilot_1m_noeod/paper/reality_check.csv",
+    "extra/pilot_1m_noeod/paper/reality_check.md",
+    "extra/pilot_1m_noeod/paper/reality_check_block_sensitivity.csv",
+    "extra/pilot_1m_noeod/paper/sharpe_by_month_primary.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va1_te1_st1_fee2_slip2_20250101-20250630_oos20250106/best_parameters_by_window.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va1_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va1_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_oos_summary.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va1_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_results.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va2_te1_st1_fee2_slip2_20250101-20250630_oos20250106/best_parameters_by_window.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va2_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va2_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_oos_summary.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va2_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_results.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va3_te1_st1_fee2_slip2_20250101-20250630_oos20250106/best_parameters_by_window.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va3_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va3_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_oos_summary.csv",
+    "extra/pilot_1m_noeod/walk_forward/tr2_va3_te1_st1_fee2_slip2_20250101-20250630_oos20250106/walk_forward_results.csv",
+    "extra/pilot_decision/pilot_cbe_by_candidate.csv",
+    "extra/pilot_decision/pilot_decision.json",
+    "extra/pilot_decision/pilot_decision.md",
+    "extra/pilot_decision/pilot_spa_by_cost.csv",
+    "paper/cbe_by_month_primary.csv",
+    "paper/lookback_comparison.csv",
+    "paper/lookback_comparison_cbe.csv",
+    "paper/oos_by_period_all_runs.csv",
+    "paper/paper_tables.md",
+    "paper/reality_check.csv",
+    "paper/reality_check.md",
+    "paper/reality_check_block_sensitivity.csv",
+    "paper/sharpe_by_month_primary.csv",
+    "runs/tr2_va1_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json",
+    "runs/tr2_va2_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json",
+    "runs/tr2_va3_te1_st1_fee2_slip2_20250101-20250630_oos20250106/run_meta.json"
+  ]
+}

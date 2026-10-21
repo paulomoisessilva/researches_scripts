@@ -44,6 +44,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--backup-dir", type=str, default=None,
                         help="Se informado, copia results/ inteiro para lá (fora do git).")
+    parser.add_argument("--extra", nargs="*", default=[],
+                        help="Pastas adicionais (relativas à raiz do projeto) cujos arquivos pequenos "
+                             "são copiados, recursivamente, para extra/<nome>/.")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -104,6 +107,11 @@ def main() -> None:
     cfg_path = Path(args.config) if args.config else root / "config.yaml"
     copy_small(cfg_path if cfg_path.is_absolute() else root / cfg_path, out / "config" / cfg_path.name, copied)
 
+    for extra in args.extra:
+        src_dir = root / extra
+        for f in sorted(p for p in src_dir.rglob("*") if p.is_file() and p.suffix != ".parquet"):
+            copy_small(f, out / "extra" / src_dir.name / f.relative_to(src_dir), copied)
+
     data_hashes = {
         p.name: {"sha256": sha256_file(p), "bytes": p.stat().st_size}
         for p in sorted((root / cfg["data"]["processed_dir"]).glob("*.parquet"))
@@ -128,7 +136,8 @@ def main() -> None:
         "- `paper/`: tabelas do paper, Reality Check/SPA.\n"
         "- `runs/*/run_meta.json`: configuração e impressão digital de cada run.\n"
         "- `engine_check/`: equivalência entre os motores de seleção.\n"
-        "- `config/`: config usado.\n\n"
+        "- `config/`: config usado.\n"
+        "- `extra/`: pastas adicionais pedidas com `--extra` (arquivos pequenos, sem Parquets).\n\n"
         "As runs completas ficam em `results/` (fora do git).\n",
         encoding="utf-8",
     )

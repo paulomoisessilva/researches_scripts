@@ -1,0 +1,72 @@
+{
+  "rule": {
+    "min_cbe_bps": 3.0,
+    "min_lookbacks": 2,
+    "spa_cost_bps": 2.0,
+    "max_spa_p": 0.1
+  },
+  "methods": [
+    {
+      "variant": "config.pilot_1m",
+      "strategy": "bollinger",
+      "lookbacks_tested": 3,
+      "lookbacks_with_cbe_ok": 0,
+      "cbe_by_lookback": {
+        "1": 0.4177464528442414,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "cbe_criterion_met": false
+    },
+    {
+      "variant": "config.pilot_1m",
+      "strategy": "regression_bands",
+      "lookbacks_tested": 3,
+      "lookbacks_with_cbe_ok": 0,
+      "cbe_by_lookback": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "cbe_criterion_met": false
+    },
+    {
+      "variant": "config.pilot_1m_noeod",
+      "strategy": "bollinger",
+      "lookbacks_tested": 3,
+      "lookbacks_with_cbe_ok": 0,
+      "cbe_by_lookback": {
+        "1": 0.17697631159153077,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "cbe_criterion_met": false
+    },
+    {
+      "variant": "config.pilot_1m_noeod",
+      "strategy": "regression_bands",
+      "lookbacks_tested": 3,
+      "lookbacks_with_cbe_ok": 0,
+      "cbe_by_lookback": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      },
+      "cbe_criterion_met": false
+    }
+  ],
+  "cbe_criterion_met": false,
+  "spa_pvalue_at_rule_cost": 1.0,
+  "spa_criterion_met": false,
+  "scale_up": false,
+  "n_days": 175,
+  "period": [
+    "2025-01-06",
+    "2025-06-29"
+  ],
+  "bootstrap": {
+    "reps": 5000,
+    "mean_block_days": 10.0,
+    "seed": 0
+  }
+}

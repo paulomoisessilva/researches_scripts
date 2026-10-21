@@ -1,0 +1,13 @@
+variant,strategy,validation_days,gross_log,units,days,cbe_bps
+config.pilot_1m,bollinger,1,0.05021312363187781,1202.0,175,0.4177464528442414
+config.pilot_1m,bollinger,2,-0.08691666668421952,840.0,175,0.0
+config.pilot_1m,bollinger,3,-0.1116846028406621,616.0,175,0.0
+config.pilot_1m,regression_bands,1,-0.06864532659103835,1154.0,175,0.0
+config.pilot_1m,regression_bands,2,-0.1524213824081122,628.0,175,0.0
+config.pilot_1m,regression_bands,3,-0.029825673560788715,606.0,175,0.0
+config.pilot_1m_noeod,bollinger,1,0.021307947915620302,1204.0,175,0.17697631159153077
+config.pilot_1m_noeod,bollinger,2,-0.08981356096015303,837.0,175,0.0
+config.pilot_1m_noeod,bollinger,3,-0.1290872857165358,630.0,175,0.0
+config.pilot_1m_noeod,regression_bands,1,-0.09271564566815015,1110.0,175,0.0
+config.pilot_1m_noeod,regression_bands,2,-0.1492302620485024,638.0,175,0.0
+config.pilot_1m_noeod,regression_bands,3,-0.02778213451452651,604.0,175,0.0
