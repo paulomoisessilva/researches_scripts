@@ -1,0 +1,273 @@
+{
+  "period_P1": [
+    "2021-01-06",
+    "2024-12-31"
+  ],
+  "period_P2": [
+    "2021-01-06",
+    "2025-12-30"
+  ],
+  "primary_rule_on_P1": {
+    "rule": {
+      "min_cbe_bps": 4.0,
+      "min_lookbacks": 2,
+      "spa_cost_bps": 4.0,
+      "max_spa_p": 0.1
+    },
+    "methods": [
+      {
+        "variant": "BTCUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.6215717143340869,
+          "2": 0.6026985394157575,
+          "3": 1.0404507267319973
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "BTCUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.38367948600650825,
+          "2": 0.5582489462676381,
+          "3": 0.8699930625068195
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.0,
+          "2": 0.35951360726584963,
+          "3": 0.5207920657358069
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.33919259522834594,
+          "2": 0.09082908125582412,
+          "3": 0.36081524126757325
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.14696233295875025,
+          "2": 0.7380155688604144,
+          "3": 1.6075075415231785
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 1.5353500902884456,
+          "2": 2.4279503176242647,
+          "3": 2.2886073887045404
+        },
+        "cbe_criterion_met": false
+      }
+    ],
+    "cbe_criterion_met": false,
+    "spa_pvalue_at_rule_cost": 1.0,
+    "spa_criterion_met": false,
+    "scale_up": false
+  },
+  "pilot_rule_on_P1": {
+    "rule": {
+      "min_cbe_bps": 3.0,
+      "min_lookbacks": 2,
+      "spa_cost_bps": 2.0,
+      "max_spa_p": 0.1
+    },
+    "methods": [
+      {
+        "variant": "BTCUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.6215717143340869,
+          "2": 0.6026985394157575,
+          "3": 1.0404507267319973
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "BTCUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.38367948600650825,
+          "2": 0.5582489462676381,
+          "3": 0.8699930625068195
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.0,
+          "2": 0.35951360726584963,
+          "3": 0.5207920657358069
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.33919259522834594,
+          "2": 0.09082908125582412,
+          "3": 0.36081524126757325
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.14696233295875025,
+          "2": 0.7380155688604144,
+          "3": 1.6075075415231785
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 1.5353500902884456,
+          "2": 2.4279503176242647,
+          "3": 2.2886073887045404
+        },
+        "cbe_criterion_met": false
+      }
+    ],
+    "cbe_criterion_met": false,
+    "spa_pvalue_at_rule_cost": 0.6098,
+    "spa_criterion_met": false,
+    "scale_up": false
+  },
+  "pilot_rule_on_P2": {
+    "rule": {
+      "min_cbe_bps": 3.0,
+      "min_lookbacks": 2,
+      "spa_cost_bps": 2.0,
+      "max_spa_p": 0.1
+    },
+    "methods": [
+      {
+        "variant": "BTCUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.5599832976734165,
+          "2": 0.43268886698305414,
+          "3": 0.7956283944116761
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "BTCUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.307455186266229,
+          "2": 0.33959017428794525,
+          "3": 0.6964354291490945
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.0,
+          "2": 0.13979253214613993,
+          "3": 0.43789262952038627
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "ETHUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.23363516896457612,
+          "2": 0.10212226708093233,
+          "3": 0.26267229025705735
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "bollinger",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 0.0,
+          "2": 0.5956148666660708,
+          "3": 1.5316232237998133
+        },
+        "cbe_criterion_met": false
+      },
+      {
+        "variant": "SOLUSDT",
+        "strategy": "regression_bands",
+        "lookbacks_tested": 3,
+        "lookbacks_with_cbe_ok": 0,
+        "cbe_by_lookback": {
+          "1": 1.2526464456032427,
+          "2": 1.9095022400430501,
+          "3": 1.70302035384779
+        },
+        "cbe_criterion_met": false
+      }
+    ],
+    "cbe_criterion_met": false,
+    "spa_pvalue_at_rule_cost": 1.0,
+    "spa_criterion_met": false,
+    "scale_up": false
+  },
+  "bootstrap": {
+    "reps": 5000,
+    "mean_block_days": 10.0,
+    "seed": 0
+  }
+}

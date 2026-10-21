@@ -1,0 +1,212 @@
+{
+  "BTCUSDT|2021H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.3,
+    "finished_at": "2026-10-21T05:43:55+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2021H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 227.5,
+    "finished_at": "2026-10-21T05:51:39+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2021H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 231.9,
+    "finished_at": "2026-10-21T05:55:31+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2021H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 232.4,
+    "finished_at": "2026-10-21T05:59:24+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2021H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 252.5,
+    "finished_at": "2026-10-21T06:03:36+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2021H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 235.8,
+    "finished_at": "2026-10-21T06:07:32+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2022H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.0,
+    "finished_at": "2026-10-21T06:11:17+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2022H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 227.4,
+    "finished_at": "2026-10-21T06:15:04+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2022H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 232.9,
+    "finished_at": "2026-10-21T06:18:57+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2022H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.9,
+    "finished_at": "2026-10-21T06:22:43+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2022H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 228.8,
+    "finished_at": "2026-10-21T06:26:32+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2022H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 232.5,
+    "finished_at": "2026-10-21T06:30:24+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2023H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 233.8,
+    "finished_at": "2026-10-21T06:34:18+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2023H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 226.2,
+    "finished_at": "2026-10-21T06:38:05+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2023H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 230.5,
+    "finished_at": "2026-10-21T06:41:55+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2023H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.9,
+    "finished_at": "2026-10-21T06:45:41+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2023H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 229.0,
+    "finished_at": "2026-10-21T06:49:30+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2023H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 231.2,
+    "finished_at": "2026-10-21T06:53:21+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2024H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 224.2,
+    "finished_at": "2026-10-21T06:57:05+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2024H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 227.4,
+    "finished_at": "2026-10-21T07:00:53+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2024H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 230.4,
+    "finished_at": "2026-10-21T07:04:43+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2024H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.0,
+    "finished_at": "2026-10-21T07:08:28+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2024H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 228.1,
+    "finished_at": "2026-10-21T07:12:16+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2024H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 233.5,
+    "finished_at": "2026-10-21T07:16:10+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2025H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 223.8,
+    "finished_at": "2026-10-21T07:19:54+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2025H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 227.9,
+    "finished_at": "2026-10-21T07:23:42+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2025H1": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 230.3,
+    "finished_at": "2026-10-21T07:27:32+00:00",
+    "workers": 8
+  },
+  "BTCUSDT|2025H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 225.8,
+    "finished_at": "2026-10-21T07:31:18+00:00",
+    "workers": 8
+  },
+  "ETHUSDT|2025H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 228.3,
+    "finished_at": "2026-10-21T07:35:06+00:00",
+    "workers": 8
+  },
+  "SOLUSDT|2025H2": {
+    "status": "done",
+    "returncode": 0,
+    "elapsed_s": 231.2,
+    "finished_at": "2026-10-21T07:38:57+00:00",
+    "workers": 8
+  }
+}

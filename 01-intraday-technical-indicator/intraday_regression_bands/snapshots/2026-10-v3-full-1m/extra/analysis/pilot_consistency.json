@@ -1,0 +1,27 @@
+{
+  "period": [
+    "2025-01-06",
+    "2025-06-29"
+  ],
+  "rows_full": 3150,
+  "rows_pilot": 1050,
+  "rows_matched": 1050,
+  "sum_ret": {
+    "max_abs_diff": 0.0,
+    "share_equal": 1.0
+  },
+  "sum_gross_ret": {
+    "max_abs_diff": 0.0,
+    "share_equal": 1.0
+  },
+  "turnover_units": {
+    "max_abs_diff": 0.0,
+    "share_equal": 1.0
+  },
+  "n_bars": {
+    "max_abs_diff": 0.0,
+    "share_equal": 1.0
+  },
+  "days_different": 0,
+  "days_different_by_candidate": {}
+}

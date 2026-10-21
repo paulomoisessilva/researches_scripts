@@ -12,6 +12,7 @@ env/
 # Dados brutos e processados (pesados demais para versionar)
 data/raw/
 data/processed/
+data/processed_full_1m/
 data/features/
 data/backtests/
 

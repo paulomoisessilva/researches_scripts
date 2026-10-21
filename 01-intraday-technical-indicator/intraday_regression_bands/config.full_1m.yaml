@@ -1,0 +1,89 @@
+# Estudo 1m completo: BTCUSDT, ETHUSDT e SOLUSDT, 2021-2025, walk-forward diário.
+# Pré-registrado em PREREGISTRATION_full_1m.md ANTES de baixar os dados de 1m fora do piloto.
+#
+# O grid é o MESMO do piloto (config.pilot_1m.yaml), sem ajuste depois de ver resultados:
+#   estratégias : bollinger e regression_bands (log-preço)
+#   janelas     : 25, 50, 75, 100 barras de 1m
+#   k           : 1,5 a 7 (passo 0,5)  -> 48 combos por estratégia
+#   entrada     : reversão confirmada, limiar fixo em 1,0; saída na linha central
+#   lookback    : validation_days 1, 2 e 3 (o treino de 2 dias só aquece)
+#   custo       : 2+2 bps por lado (RC/SPA reavalia 0..8 bps); sem placebo `random`
+#   fechamento  : posição zerada no fim do dia UTC
+#
+# Um ano de 1m tem ~525 mil barras e o DataFrame de features (263 colunas) passaria de 1 GB por
+# processo; por isso o script 13 divide o período em blocos semestrais, cada um com >= 6 dias de
+# histórico antes do primeiro dia de teste (a escolha de parâmetros só olha 1 a 3 dias para trás,
+# então os blocos reproduzem uma run contínua). Cada bloco usa uma cópia deste config com
+# start_date, end_date e oos_start próprios.
+#
+#   python scripts/01_download_data.py --config config.full_1m.yaml
+#   python scripts/02_prepare_data.py  --config config.full_1m.yaml
+#   python scripts/13_run_full_1m.py   --config config.full_1m.yaml --workers 8
+#   python scripts/14_analyze_full_1m.py --config config.full_1m.yaml
+
+project:
+  name: "intraday_regression_bands_full_1m"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  intervals: ["1m"]
+  start_date: "2021-01-01"
+  end_date: "2025-12-31"
+  raw_dir: "data/raw/binance"
+  # Pasta própria: o BTCUSDT_1m.parquet do piloto (SHA-256 no snapshot v2) fica intacto.
+  processed_dir: "data/processed_full_1m"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0, 2, 5, 10]
+  slippage_bps_per_side: [0, 2, 5, 10]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [25, 50, 75, 100]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+  regression_windows: [25, 50, 75, 100]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+
+strategies:
+  - bollinger
+  - regression_bands
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [1.0]
+  entry_short_z: [1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  # Lookback de seleção = validation_days (o treino só aquece a estratégia).
+  train_days: 2
+  validation_days: 2   # run primária; o estudo varia em study.validation_days
+  test_days: 1
+  step_days: 1
+  oos_start: "2021-01-06"        # histórico mínimo: train_days + max(validation_days) = 5 dias
+  close_position_end_of_day: true
+  selection_metric: "net_sharpe"
+  selection_engine: "single_pass"
+  parallel_workers: 8
+  save_random_equity: false
+  runs_dir: "results/full_1m/walk_forward"
+
+study:
+  validation_days: [1, 2, 3]
+  cost_scenarios:
+    - [2, 2]
+
+random_baseline:
+  n_seeds: 10
+  seed_base: 0
+  trade_prob: 0.05

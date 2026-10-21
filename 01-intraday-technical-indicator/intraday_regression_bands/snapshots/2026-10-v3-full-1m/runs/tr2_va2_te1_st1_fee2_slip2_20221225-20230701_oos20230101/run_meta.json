@@ -1,0 +1,43 @@
+{
+  "run_id": "tr2_va2_te1_st1_fee2_slip2_20221225-20230701_oos20230101",
+  "fingerprint": "c32a8824fa45",
+  "fee_bps": 2.0,
+  "slippage_bps": 2.0,
+  "train_days": 2,
+  "validation_days": 2,
+  "test_days": 1,
+  "step_days": 1,
+  "oos_start": "2023-01-01",
+  "selection_metric": "net_sharpe",
+  "close_position_end_of_day": true,
+  "start_date": "2022-12-25",
+  "end_date": "2023-07-01",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "intervals": [
+    "1m"
+  ],
+  "strategies": [
+    "bollinger",
+    "regression_bands"
+  ],
+  "random_baseline": {
+    "n_seeds": 10,
+    "seed_base": 0,
+    "trade_prob": 0.05
+  },
+  "annualization_days_per_year": 365,
+  "config_path": "C:\\Users\\Paulo\\Documents\\Pessoal\\repositorios\\researches_scripts\\01-intraday-technical-indicator\\intraday_regression_bands\\results\\full_1m\\chunk_configs\\chunk_2023H1.yaml",
+  "created_at": "2026-10-21T06:31:48+00:00",
+  "n_windows": {
+    "BTCUSDT_1m_bollinger": 181,
+    "BTCUSDT_1m_regression_bands": 181,
+    "ETHUSDT_1m_bollinger": 181,
+    "ETHUSDT_1m_regression_bands": 181,
+    "SOLUSDT_1m_bollinger": 181,
+    "SOLUSDT_1m_regression_bands": 181
+  }
+}
