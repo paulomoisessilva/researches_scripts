@@ -290,3 +290,26 @@ class TestMultiAsset:
         assert set(real["symbol"]) == {"AAA", "BBB"} and set(dist["symbol"]) == {"AAA", "BBB"}
         pv = sharpe_pivot(real)
         assert list(pv.index.names) == ["symbol", "strategy"]
+
+    def test_extending_a_run_with_another_symbol_keeps_both(self, tmp_path):
+        import json
+
+        from src.wf_runner import run_experiment
+
+        df, df_feat, cfg = TestWindowParallelism._setup()
+        cfg["walk_forward"].update({
+            "runs_dir": str(tmp_path / "wf"), "oos_start": "2022-01-20", "step_days": 6,
+            "save_random_equity": False, "parallel_workers": 1, "random_cache": False,
+        })
+        cfg["random_baseline"] = {"n_seeds": 2, "seed_base": 0, "trade_prob": 0.05}
+        cfg["data"] = {"start_date": "2022-01-01", "end_date": "2022-02-09"}
+
+        first = run_experiment(cfg, {("AAA", "15m"): (df, df_feat)}, ["bollinger", "random"], 2.0, 2.0)
+        second = run_experiment(cfg, {("BBB", "15m"): (df, df_feat)}, ["bollinger", "random"], 2.0, 2.0)
+        assert first == second  # mesma pasta: o run_id não depende do ativo
+
+        meta = json.loads((second / "run_meta.json").read_text())
+        assert meta["symbols"] == ["AAA", "BBB"]
+        assert set(meta["n_windows"]) >= {"AAA_15m_bollinger", "BBB_15m_bollinger", "AAA_15m_random", "BBB_15m_random"}
+        wf = pd.read_csv(second / "walk_forward_results.csv")
+        assert set(wf["symbol"]) == {"AAA", "BBB"}

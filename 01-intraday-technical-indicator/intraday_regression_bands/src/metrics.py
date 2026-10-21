@@ -120,14 +120,22 @@ def average_holding_time(trades: pd.DataFrame) -> float:
     return float(trades["holding_bars"].mean())
 
 
-def turnover(positions: pd.Series) -> float:
-    """Soma das mudanças absolutas de posição / número de candles."""
+def turnover(positions: pd.Series, trade_units: pd.Series | None = None) -> float:
+    """Soma das mudanças absolutas de posição / número de candles.
+
+    Com ``trade_units`` (|Δposição| cobrado por barra) a entrada na 1ª barra da fatia conta;
+    ``positions.diff()`` a perde.
+    """
+    if trade_units is not None:
+        return float(np.asarray(trade_units, dtype=float).sum() / max(len(positions), 1))
     changes = positions.diff().abs().fillna(0)
     return float(changes.sum() / max(len(positions), 1))
 
 
-def _position_change_units(positions: pd.Series) -> float:
+def _position_change_units(positions: pd.Series, trade_units: pd.Series | None = None) -> float:
     """Soma de |Δposição| — unidades sobre as quais o backtest cobra custo."""
+    if trade_units is not None:
+        return float(np.asarray(trade_units, dtype=float).sum())
     return float(positions.diff().abs().fillna(0).sum())
 
 
@@ -180,6 +188,7 @@ def selection_metric_score(
 def break_even_total_return_bps(
     gross_returns: pd.Series,
     positions: pd.Series,
+    trade_units: pd.Series | None = None,
 ) -> float:
     """Custo combinado (fee + slippage) por lado que zera o lucro acumulado.
 
@@ -193,7 +202,7 @@ def break_even_total_return_bps(
     if gross_log <= 0:
         return 0.0
 
-    change_units = _position_change_units(positions)
+    change_units = _position_change_units(positions, trade_units)
     if change_units == 0:
         return np.nan  # convenção: sem turnover, BETC indefinido
 
@@ -204,10 +213,11 @@ def break_even_cost_bps(
     gross_returns: pd.Series,
     positions: pd.Series,
     interval: str | None = None,
+    trade_units: pd.Series | None = None,
 ) -> float:
     """Alias de break_even_total_return_bps (CBE por turnover, não anualizado)."""
     _ = interval  # mantido por compatibilidade de assinatura
-    return break_even_total_return_bps(gross_returns, positions)
+    return break_even_total_return_bps(gross_returns, positions, trade_units)
 
 
 def compute_metrics(
@@ -221,6 +231,7 @@ def compute_metrics(
     fee_bps: float = 0.0,
     slippage_bps: float = 0.0,
     gross_returns: pd.Series | None = None,
+    trade_units: pd.Series | None = None,
 ) -> dict:
     """Calcula todas as métricas de performance de um backtest."""
     trades_with_ret = _compute_trade_returns(trades)
@@ -254,9 +265,9 @@ def compute_metrics(
         ),
         "exposure_time": exposure_time(positions),
         "average_holding_time": average_holding_time(trades_with_ret),
-        "turnover": turnover(positions),
-        "break_even_cost_bps": break_even_cost_bps(gross, positions, interval),
-        "break_even_total_return_bps": break_even_total_return_bps(gross, positions),
+        "turnover": turnover(positions, trade_units),
+        "break_even_cost_bps": break_even_cost_bps(gross, positions, interval, trade_units),
+        "break_even_total_return_bps": break_even_total_return_bps(gross, positions, trade_units),
     }
     return metrics
 

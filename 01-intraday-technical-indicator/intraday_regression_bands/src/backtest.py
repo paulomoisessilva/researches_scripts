@@ -56,6 +56,8 @@ class BacktestResult:
     trades: pd.DataFrame
     gross_returns: pd.Series
     metrics: dict = field(default_factory=dict)
+    # |Δposição| cobrado em cada barra (inclui a entrada na 1ª barra, que diff() perde numa fatia)
+    trade_units: pd.Series | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +93,7 @@ def run_backtest(
     strategy_ret = np.zeros(n)
     gross_ret = np.zeros(n)
     holding_bars = 0
+    trade_units = np.zeros(n)
 
     fee_rate = cfg_bt.fee_bps / 10_000.0
     slip_rate = cfg_bt.slippage_bps / 10_000.0
@@ -124,6 +127,7 @@ def run_backtest(
         if changed:
             trade_size = abs(new_pos - prev_pos)
             cost_this_bar = trade_size * per_side_rate
+            trade_units[t] = trade_size
 
             if prev_pos != 0:
                 exit_price = opens[t]
@@ -176,6 +180,7 @@ def run_backtest(
         positions=pos_series,
         trades=trades_df,
         gross_returns=gross_series,
+        trade_units=pd.Series(trade_units, index=timestamps, name="trade_units"),
     )
 
 

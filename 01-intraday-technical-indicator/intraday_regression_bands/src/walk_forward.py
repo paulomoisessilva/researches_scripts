@@ -156,6 +156,7 @@ def _slice_backtest_result(
         positions=result.positions.loc[mask],
         trades=_filter_trades_by_period(result.trades, start, end),
         gross_returns=result.gross_returns.loc[mask],
+        trade_units=None if result.trade_units is None else result.trade_units.loc[mask],
     )
 
 
@@ -292,6 +293,7 @@ class WFResult:
     test_positions: pd.Series
     test_trades: pd.DataFrame
     test_metrics: dict
+    test_trade_units: pd.Series | None = None
 
 
 def build_windows(
@@ -831,6 +833,7 @@ def _run_one_window(
         fee_bps=ctx.fee_bps,
         slippage_bps=ctx.slippage_bps,
         gross_returns=test_result.gross_returns,
+        trade_units=test_result.trade_units,
     )
 
     return WFResult(
@@ -846,6 +849,7 @@ def _run_one_window(
         test_positions=test_result.positions,
         test_trades=test_result.trades,
         test_metrics=test_metrics,
+        test_trade_units=test_result.trade_units,
     )
 
 
@@ -982,6 +986,10 @@ def aggregate_walk_forward_oos(all_results: list[WFResult]) -> pd.DataFrame:
         positions = pd.concat([r.test_positions for r in results]).sort_index()
         positions = positions.reindex(returns.index).fillna(0.0)
         gross_returns = gross_returns.reindex(returns.index).fillna(0.0)
+        units = None
+        if all(r.test_trade_units is not None for r in results):
+            units = pd.concat([r.test_trade_units for r in results]).sort_index()
+            units = units.reindex(returns.index).fillna(0.0)
 
         log_returns = returns.fillna(0)
         equity = pd.Series(np.exp(log_returns.cumsum()), index=returns.index)
@@ -995,8 +1003,8 @@ def aggregate_walk_forward_oos(all_results: list[WFResult]) -> pd.DataFrame:
             "oos_sharpe": sharpe_ratio(returns, interval),
             "oos_max_drawdown": max_drawdown(equity),
             "number_of_trades": int(sum(len(r.test_trades) for r in results)),
-            "break_even_total_return_bps": break_even_total_return_bps(gross_returns, positions),
-            "break_even_cost_bps": break_even_cost_bps(gross_returns, positions, interval),
+            "break_even_total_return_bps": break_even_total_return_bps(gross_returns, positions, units),
+            "break_even_cost_bps": break_even_cost_bps(gross_returns, positions, interval, units),
         }
         if seed is not None:
             row["seed"] = seed
@@ -1107,7 +1115,12 @@ def window_moments(r: WFResult) -> dict[str, Any]:
         "sum_ret": float(ret.sum()),
         "sum_sq_ret": float((ret ** 2).sum()),
         "sum_gross_ret": float(gross.sum()),
-        "turnover_units": float(pos.diff().abs().fillna(0.0).sum()),
+        # |Δposição| cobrado (inclui a entrada na 1ª barra do dia, que diff() perde)
+        "turnover_units": (
+            float(pos.diff().abs().fillna(0.0).sum())
+            if r.test_trade_units is None
+            else float(r.test_trade_units.fillna(0.0).sum())
+        ),
     }
 
 

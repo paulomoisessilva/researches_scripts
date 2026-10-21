@@ -85,9 +85,24 @@ python scripts/05_run_walk_forward.py --config config.paper.yaml --study  # jane
 # 6. Gerar gráficos, tabelas e relatório do backtest fixo (script 04)
 python scripts/06_generate_results.py
 
-# 7. Tabelas do paper (por ano, por janela de treino, por custo) a partir das runs do passo 5
+# 7. Tabelas do paper (por ano, por lookback de validação) a partir das runs do passo 5
 python scripts/07_paper_tables.py --config config.paper.yaml
+
+# 8. (opcional) equivalência entre o motor de seleção fatiado e o de passagem única
+python scripts/08_check_engine_equivalence.py --config config.paper.yaml --n-windows 40
+
+# 9. Reality Check (White) e SPA (Hansen) sobre as candidatas ativo x estratégia x lookback
+python scripts/09_reality_check.py --config config.paper.yaml
 ```
+
+### Reality Check / SPA (`scripts/09_reality_check.py`)
+
+Testa se **alguma** das candidatas (ativo x estratégia x `validation_days`) tem retorno líquido esperado
+positivo depois de corrigir por data snooping. Usa os retornos diários das runs, bootstrap estacionário
+(blocos geométricos, média de 10 dias por padrão) e benchmark = caixa. Como as posições não dependem do custo,
+o retorno líquido é `bruto - turnover x custo`, então o teste é repetido numa grade de custos (0 = sinal bruto).
+Saídas em `results/paper/`: `reality_check.csv`, `reality_check_block_sensitivity.csv` e `reality_check.md`.
+O p-valor a reportar é o **SPA consistente** (`spa_pvalue_consistent`); o RC é a versão sem studentizar.
 
 ### Runs do walk-forward (`run_id`)
 
@@ -161,6 +176,7 @@ Config do paper (`config.paper.yaml`):
 - Seleção por Sharpe líquido (`net_sharpe`) apenas no período de validação; posição fechada no fim do dia UTC
 - Sharpe e retorno anualizados com 365 dias/ano (cripto 24/7)
 - Tabelas por ano: `scripts/07_paper_tables.py` reagrega os momentos por janela (`sum_ret`, `sum_sq_ret`, ...)
+- `turnover_units` conta o |Δposição| cobrado em cada barra, inclusive a entrada na 1ª barra do dia (`trade_units` no backtest); `positions.diff()` na fatia perdia essa unidade e inflava o CBE por dia em ~1 bps.
 
 ### Baseline aleatório multi-seed (placebo)
 

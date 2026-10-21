@@ -328,6 +328,21 @@ def _run_random_strategy(
     return "desligado", len(windows)
 
 
+def _merge_previous_meta(meta_path: Path, meta: dict[str, Any]) -> None:
+    """Ao retomar/ampliar uma run (ex.: novos ativos), preserva o que já constava no meta."""
+    if not meta_path.exists():
+        return
+    old = json.loads(meta_path.read_text(encoding="utf-8"))
+    for key in ("symbols", "intervals", "strategies"):
+        meta[key] = sorted(set(old.get(key, [])) | set(meta.get(key, [])))
+    for key in ("n_windows", "random_cache"):
+        merged = dict(old.get(key, {}))
+        merged.update(meta.get(key, {}))
+        if merged:
+            meta[key] = merged
+    meta["created_at"] = old.get("created_at", meta["created_at"])
+
+
 def run_experiment(
     cfg: dict[str, Any],
     inputs: dict[tuple[str, str], tuple[pd.DataFrame, pd.DataFrame]],
@@ -385,6 +400,7 @@ def run_experiment(
     ensure_dir(run_dir)
     meta_path = run_dir / META_FILENAME
     _check_meta_compatible(meta_path, meta)
+    _merge_previous_meta(meta_path, meta)
     # Grava já no início: se a execução cair no meio, a retomada ainda é validada.
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 

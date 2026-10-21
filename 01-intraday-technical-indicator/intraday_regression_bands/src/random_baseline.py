@@ -129,6 +129,7 @@ def seed_results(seed: int, ctx: RandomContext) -> list[WFResult]:
             fee_bps=ctx.bt_cfg.fee_bps,
             slippage_bps=ctx.bt_cfg.slippage_bps,
             gross_returns=test_result.gross_returns,
+            trade_units=test_result.trade_units,
         )
         results.append(WFResult(
             window_id=win.window_id,
@@ -143,6 +144,7 @@ def seed_results(seed: int, ctx: RandomContext) -> list[WFResult]:
             test_positions=test_result.positions,
             test_trades=test_result.trades,
             test_metrics=test_metrics,
+            test_trade_units=test_result.trade_units,
         ))
     return results
 
