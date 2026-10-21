@@ -72,6 +72,8 @@ walk_forward:
   parallel_workers: 8
   # 100 seeds x ~1800 janelas geram dezenas de milhões de linhas de equity por run.
   save_random_equity: false
+  # Placebo reaproveitado entre runs com mesmo oos_start/custo/seeds/dados (results/cache/random).
+  random_cache: true
 
 # Estudo de robustez (--study): lookback da seleção de parâmetros.
 # A seleção pontua SÓ a janela de validação; o treino apenas aquece a estratégia e não altera

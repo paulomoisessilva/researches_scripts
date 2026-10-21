@@ -716,69 +716,23 @@ def _run_walk_forward_random(
     bt_cfg_template: BacktestConfig,
     wf_cfg: dict,
 ) -> list[WFResult]:
-    """Walk-forward para baseline aleatório — sem otimização na validação."""
+    """Walk-forward para baseline aleatório — sem otimização na validação.
+
+    Versão em memória (retorna todos os WFResult). Para a run completa use
+    ``random_baseline.run_random_baseline_to_disk`` (paralelo, em blocos, com cache).
+    """
+    from .random_baseline import build_context, seed_results
+
     seeds = resolve_random_seeds(cfg)
+    ctx = build_context(df_feat_full, cfg, symbol, interval, windows, bt_cfg_template, wf_cfg)
     results: list[WFResult] = []
-    n_windows = len(windows)
-    log_every = max(1, n_windows // 10)
-
     for seed_idx, seed in enumerate(seeds):
-        params = _random_baseline_params(cfg, seed)
-        # Um sinal por seed no dataset completo; cada janela backtesta só o teste.
-        full_signal = strategy_random(df_feat_full, **params)
-
-        for win_idx, win in enumerate(windows):
-            ts = df_feat_full["timestamp"]
-            test_mask = (ts >= win.test_start) & (ts < win.test_end)
-            df_feat_test = df_feat_full.loc[test_mask].reset_index(drop=True)
-            min_test_bars = 1 if wf_cfg.get("test_days", 1) == 1 else 10
-            if len(df_feat_test) < min_test_bars:
-                continue
-
-            try:
-                signal_test = full_signal.loc[test_mask].reset_index(drop=True)
-                test_result = run_backtest(df_feat_test, signal_test, bt_cfg_template)
-            except Exception as exc:
-                logger.warning("[WF %d] random seed=%d erro: %s", win.window_id, seed, exc)
-                continue
-
-            test_metrics = compute_metrics(
-                test_result.equity,
-                test_result.returns,
-                test_result.positions,
-                test_result.trades,
-                interval=interval,
-                strategy_name="random",
-                symbol=symbol,
-                fee_bps=bt_cfg_template.fee_bps,
-                slippage_bps=bt_cfg_template.slippage_bps,
-                gross_returns=test_result.gross_returns,
-            )
-
-            results.append(WFResult(
-                window_id=win.window_id,
-                strategy="random",
-                symbol=symbol,
-                interval=interval,
-                best_params=params,
-                val_metric=float("nan"),
-                test_equity=test_result.equity,
-                test_returns=test_result.returns,
-                test_gross_returns=test_result.gross_returns,
-                test_positions=test_result.positions,
-                test_trades=test_result.trades,
-                test_metrics=test_metrics,
-            ))
-
-            if (win_idx + 1) % log_every == 0 or win_idx == n_windows - 1:
-                logger.info(
-                    "Random seed %d/%d | janela %d/%d concluída.",
-                    seed_idx + 1, len(seeds), win_idx + 1, n_windows,
-                )
+        results.extend(seed_results(seed, ctx))
+        logger.info("Random seed %d/%d concluída.", seed_idx + 1, len(seeds))
 
     logger.info(
         "Random baseline: %d seeds x %d janelas -> %d resultados.",
-        len(seeds), n_windows, len(results),
+        len(seeds), len(windows), len(results),
     )
     return results
 
@@ -1102,7 +1056,7 @@ def _merge_walk_forward_csv(
     """Substitui linhas com mesmas chaves e mantém o resto de execuções anteriores."""
     if not path.exists() or new_df.empty:
         return new_df
-    existing = pd.read_csv(path)
+    existing = pd.read_csv(path, float_precision="round_trip")  # releitura sem perder 1 ulp
     if existing.empty:
         return new_df
     if any(col not in existing.columns for col in key_cols):
@@ -1157,28 +1111,11 @@ def window_moments(r: WFResult) -> dict[str, Any]:
     }
 
 
-def save_walk_forward_results(
+def build_result_tables(
     all_results: list[WFResult],
-    tables_dir: str | Path,
-    backtests_dir: str | Path,
     save_random_equity: bool = True,
-) -> None:
-    """Salva resultados walk-forward em CSV, Parquet e tabela de parâmetros.
-
-    ``save_random_equity=False`` omite as curvas de equity do baseline aleatório
-    (100 seeds x ~1800 janelas geram dezenas de milhões de linhas); as métricas
-    e os momentos por janela do random continuam salvos.
-    """
-    tables_dir = Path(tables_dir)
-    backtests_dir = Path(backtests_dir)
-    ensure_dir(tables_dir)
-    ensure_dir(backtests_dir)
-
-    if not all_results:
-        logger.warning("Nenhum resultado walk-forward para salvar.")
-        return
-
-    # Tabela de métricas por janela
+) -> tuple[pd.DataFrame, pd.DataFrame, list[pd.DataFrame]]:
+    """Converte resultados por janela em (métricas, parâmetros, quadros de equity)."""
     metrics_rows = []
     params_rows = []
     equity_frames = []
@@ -1221,36 +1158,44 @@ def save_walk_forward_results(
             eq_df["seed"] = int(r.best_params["seed"])
         equity_frames.append(eq_df)
 
-    metrics_df = pd.DataFrame(metrics_rows)
+    return pd.DataFrame(metrics_rows), pd.DataFrame(params_rows), equity_frames
+
+
+def write_result_tables(
+    metrics_df: pd.DataFrame,
+    params_df: pd.DataFrame,
+    oos_summary: pd.DataFrame,
+    equity_frames: list[pd.DataFrame],
+    tables_dir: str | Path,
+    backtests_dir: str | Path,
+) -> None:
+    """Mescla (por chave) as tabelas novas nas existentes e grava CSV/Parquet."""
+    tables_dir = Path(tables_dir)
+    backtests_dir = Path(backtests_dir)
+    ensure_dir(tables_dir)
+    ensure_dir(backtests_dir)
+
     metrics_keys = ["window_id", "strategy", "symbol", "interval"]
     if "seed" in metrics_df.columns:
         metrics_keys.append("seed")
     metrics_merged = _merge_walk_forward_csv(
-        metrics_df,
-        tables_dir / "walk_forward_results.csv",
-        metrics_keys,
+        metrics_df, tables_dir / "walk_forward_results.csv", metrics_keys,
     )
     metrics_merged.to_csv(tables_dir / "walk_forward_results.csv", index=False)
 
-    params_df = pd.DataFrame(params_rows)
     params_keys = ["window_id", "strategy", "symbol", "interval"]
     if "param_seed" in params_df.columns:
         params_keys.append("param_seed")
     params_merged = _merge_walk_forward_csv(
-        params_df,
-        tables_dir / "best_parameters_by_window.csv",
-        params_keys,
+        params_df, tables_dir / "best_parameters_by_window.csv", params_keys,
     )
     params_merged.to_csv(tables_dir / "best_parameters_by_window.csv", index=False)
 
-    oos_summary = aggregate_walk_forward_oos(all_results)
     oos_key_cols = ["strategy", "symbol", "interval"]
     if "seed" in oos_summary.columns:
         oos_key_cols.append("seed")
     oos_merged = _merge_walk_forward_csv(
-        oos_summary,
-        tables_dir / "walk_forward_oos_summary.csv",
-        oos_key_cols,
+        oos_summary, tables_dir / "walk_forward_oos_summary.csv", oos_key_cols,
     )
     oos_merged.to_csv(tables_dir / "walk_forward_oos_summary.csv", index=False)
     logger.info("Resumo OOS + CBE salvo: %d linhas.", len(oos_merged))
@@ -1263,11 +1208,31 @@ def save_walk_forward_results(
     if equity_frames:
         equity_new = pd.concat(equity_frames, ignore_index=True)
         equity_merged = _merge_walk_forward_equity(
-            equity_new,
-            backtests_dir / "walk_forward_equity.parquet",
+            equity_new, backtests_dir / "walk_forward_equity.parquet",
         )
-        equity_merged.to_parquet(
-            backtests_dir / "walk_forward_equity.parquet", index=False
-        )
+        equity_merged.to_parquet(backtests_dir / "walk_forward_equity.parquet", index=False)
 
     logger.info("Resultados walk-forward salvos em %s", tables_dir)
+
+
+def save_walk_forward_results(
+    all_results: list[WFResult],
+    tables_dir: str | Path,
+    backtests_dir: str | Path,
+    save_random_equity: bool = True,
+) -> None:
+    """Salva resultados walk-forward em CSV, Parquet e tabela de parâmetros.
+
+    ``save_random_equity=False`` omite as curvas de equity do baseline aleatório
+    (100 seeds x ~1800 janelas geram dezenas de milhões de linhas); as métricas
+    e os momentos por janela do random continuam salvos.
+    """
+    if not all_results:
+        logger.warning("Nenhum resultado walk-forward para salvar.")
+        return
+
+    metrics_df, params_df, equity_frames = build_result_tables(all_results, save_random_equity)
+    oos_summary = aggregate_walk_forward_oos(all_results)
+    write_result_tables(
+        metrics_df, params_df, oos_summary, equity_frames, tables_dir, backtests_dir
+    )

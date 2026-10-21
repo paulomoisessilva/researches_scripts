@@ -267,7 +267,7 @@ class TestMultiAsset:
 
         df, df_feat, cfg = TestWindowParallelism._setup()
         cfg["walk_forward"].update({
-            "runs_dir": str(tmp_path), "oos_start": "2022-01-20", "step_days": 6,
+            "runs_dir": str(tmp_path / "wf"), "oos_start": "2022-01-20", "step_days": 6,
             "save_random_equity": False, "parallel_workers": 1,
         })
         cfg["random_baseline"] = {"n_seeds": 3, "seed_base": 0, "trade_prob": 0.05}

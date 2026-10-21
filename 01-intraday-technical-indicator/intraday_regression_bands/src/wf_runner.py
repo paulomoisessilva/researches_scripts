@@ -27,7 +27,18 @@ from .config import (
 from .indicators import features_parquet_path, load_or_compute_features
 from .metrics import annualization_factor
 from .utils import ensure_dir, setup_logger
+from .backtest import BacktestConfig
+from .random_baseline import (
+    cache_dir_for,
+    cache_is_complete,
+    export_to_cache,
+    load_from_cache,
+    random_cache_key,
+    run_random_baseline_to_disk,
+)
 from .walk_forward import (
+    _get_wf_int,
+    build_windows,
     run_walk_forward,
     save_walk_forward_results,
     validate_grid_features,
@@ -164,7 +175,7 @@ def config_fingerprint(cfg: dict[str, Any]) -> str:
     """Hash das seções que definem o experimento (exclui custos e paralelismo)."""
     wf = {
         k: v for k, v in cfg.get("walk_forward", {}).items()
-        if k not in ("parallel_workers", "runs_dir")
+        if k not in ("parallel_workers", "runs_dir", "random_cache")
     }
     bt = {k: cfg.get("backtest", {}).get(k) for k in _FINGERPRINT_BACKTEST_KEYS}
     payload = {
@@ -259,6 +270,64 @@ def _check_meta_compatible(meta_path: Path, meta: dict[str, Any]) -> None:
             )
 
 
+def _run_random_strategy(
+    run_cfg: dict[str, Any],
+    df: pd.DataFrame,
+    df_feat: pd.DataFrame,
+    symbol: str,
+    interval: str,
+    fee_bps: float,
+    slippage_bps: float,
+    run_dir: Path,
+    n_workers: int,
+    save_random_equity: bool,
+) -> tuple[str, int]:
+    """Placebo: reaproveita o cache compartilhado (se houver) ou roda em paralelo, em blocos."""
+    wf_cfg = run_cfg["walk_forward"]
+    windows = build_windows(
+        df,
+        train_days=_get_wf_int(wf_cfg, "train_days"),
+        val_days=_get_wf_int(wf_cfg, "validation_days", "val_days"),
+        test_days=_get_wf_int(wf_cfg, "test_days"),
+        step_days=_get_wf_int(wf_cfg, "step_days"),
+        oos_start=wf_cfg.get("oos_start"),
+    )
+    if not windows:
+        logger.warning("Sem janelas walk-forward para %s %s", symbol, interval)
+        return "none", 0
+
+    # Sem equity do random, o resultado independe do lookback e pode ser compartilhado.
+    use_cache = bool(wf_cfg.get("random_cache", True)) and not save_random_equity
+    cache_dir = None
+    if use_cache:
+        key = random_cache_key(run_cfg, symbol, interval, fee_bps, slippage_bps, df_feat)
+        cache_dir = cache_dir_for(resolve_runs_root(run_cfg).parent / "cache" / "random", symbol, interval, key)
+        if cache_is_complete(cache_dir):
+            logger.info("Random baseline: reaproveitando cache %s", cache_dir.name)
+            load_from_cache(cache_dir, run_dir)
+            return "hit", len(windows)
+
+    bt_cfg = BacktestConfig(
+        strategy_name="random",
+        symbol=symbol,
+        interval=interval,
+        initial_capital=run_cfg["backtest"]["initial_capital"],
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+        allow_short=run_cfg["backtest"]["allow_short"],
+        max_position=run_cfg["backtest"]["max_position"],
+        close_eod=wf_cfg.get("close_position_end_of_day", True),
+    )
+    run_random_baseline_to_disk(
+        df_feat, run_cfg, symbol, interval, windows, bt_cfg, wf_cfg, run_dir,
+        n_workers=n_workers, save_random_equity=save_random_equity,
+    )
+    if cache_dir is not None:
+        export_to_cache(run_dir, cache_dir, symbol, interval)
+        return "miss (salvo no cache)", len(windows)
+    return "desligado", len(windows)
+
+
 def run_experiment(
     cfg: dict[str, Any],
     inputs: dict[tuple[str, str], tuple[pd.DataFrame, pd.DataFrame]],
@@ -334,6 +403,14 @@ def run_experiment(
     for (symbol, interval), (df, df_feat) in inputs.items():
         for strategy in strategies:
             logger.info("Estratégia %s (%s %s)", strategy, symbol, interval)
+            if strategy == "random":
+                status, n_windows = _run_random_strategy(
+                    run_cfg, df, df_feat, symbol, interval, fee_bps, slippage_bps,
+                    run_dir, n_workers, save_random_equity,
+                )
+                meta.setdefault("random_cache", {})[f"{symbol}_{interval}"] = status
+                meta.setdefault("n_windows", {})[f"{symbol}_{interval}_{strategy}"] = n_windows
+                continue
             results = run_walk_forward(
                 df=df,
                 strategy_name=strategy,

@@ -106,6 +106,7 @@ codifica janelas, custo e período, ex.: `tr21_va7_te1_st1_fee2_slip2_20210101-2
   `single_pass` (cada combo roda uma vez na série inteira e a pontuação de validação sai de somas acumuladas;
   cerca de 40× menos CPU). A equivalência entre os dois é medida por
   `scripts/08_check_engine_equivalence.py`. Empates de pontuação (< 1e-9) vão para o primeiro combo do grid.
+- **Baseline aleatório (`random`)**: roda em paralelo por seed e grava em blocos (placebo de 100 seeds x 1766 janelas: ~5 min com 14 workers, contra ~23 min antes). Com `save_random_equity: false`, o resultado é guardado em `results/cache/random/` e **reaproveitado** por qualquer run com o mesmo `oos_start`, custo, seeds e dados (o placebo não depende do lookback); `walk_forward.random_cache: false` desliga.
 - Só a janela de **validação** entra na pontuação de seleção; `train_days` apenas aquece a estratégia (não altera a escolha). Por isso o estudo de robustez varia `validation_days`.
 - `walk_forward.oos_start` fixa o primeiro dia de teste, então todas as janelas de treino avaliam o **mesmo** período OOS.
 - Sem custo configurado o padrão é fee=0/slippage=0 (resultado bruto); o script avisa.
