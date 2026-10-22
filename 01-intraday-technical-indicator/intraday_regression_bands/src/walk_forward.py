@@ -895,6 +895,7 @@ def run_walk_forward(
 
     close_eod = wf_cfg.get("close_position_end_of_day", True)
     selection_metric = wf_cfg.get("selection_metric", "net_sharpe")
+    carry = bool(wf_cfg.get("carry_position_state", False))
 
     bt_cfg_template = BacktestConfig(
         strategy_name=strategy_name,
@@ -916,6 +917,8 @@ def run_walk_forward(
         df_feat_full = df_feat
 
     if strategy_name == "random":
+        if carry:
+            raise ValueError("walk_forward.carry_position_state não se aplica à estratégia 'random'.")
         return _run_walk_forward_random(
             df, cfg, symbol, interval, windows, df_feat_full, bt_cfg_template, wf_cfg
         )
@@ -936,6 +939,18 @@ def run_walk_forward(
     engine = wf_cfg.get("selection_engine", "sliced")
     if engine not in ("sliced", "single_pass"):
         raise ValueError(f"walk_forward.selection_engine inválido: '{engine}' (sliced | single_pass).")
+    if carry:
+        problems = []
+        if engine != "single_pass":
+            problems.append("selection_engine deve ser 'single_pass'")
+        if strategy_name not in BAND_STRATEGIES:
+            problems.append(f"a estratégia deve ser de bandas ({sorted(BAND_STRATEGIES)})")
+        if close_eod:
+            problems.append("close_position_end_of_day deve ser false")
+        if _get_wf_int(wf_cfg, "test_days") != _get_wf_int(wf_cfg, "step_days"):
+            problems.append("step_days deve ser igual a test_days (dias de teste contíguos)")
+        if problems:
+            raise ValueError("walk_forward.carry_position_state=true exige: " + "; ".join(problems) + ".")
     if engine == "single_pass" and strategy_name in BAND_STRATEGIES:
         from .fast_select import fast_select_band_params
 
@@ -948,6 +963,15 @@ def run_walk_forward(
             win.window_id: (selection.best_params(i), selection.best_score(i))
             for i, win in enumerate(windows)
         }
+        if carry:
+            from .carried_walk_forward import run_carried_walk_forward
+
+            return run_carried_walk_forward(
+                window_ctx.df_feat, strategy_name, windows,
+                [selection.best_params(i) for i in range(len(windows))],
+                [selection.best_score(i) for i in range(len(windows))],
+                bt_cfg_template, symbol, interval, fee_bps, slippage_bps,
+            )
 
     if workers > 1 and len(windows) > 1:
         # Paraleliza ENTRE janelas (independentes): cada processo faz o grid de uma

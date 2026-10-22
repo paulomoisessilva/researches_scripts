@@ -383,6 +383,7 @@ def run_experiment(
         "oos_start": str(wf_cfg["oos_start"]) if wf_cfg.get("oos_start") else None,
         "selection_metric": wf_cfg.get("selection_metric", "net_sharpe"),
         "close_position_end_of_day": bool(wf_cfg.get("close_position_end_of_day", True)),
+        "carry_position_state": bool(wf_cfg.get("carry_position_state", False)),
         "start_date": start_date,
         "end_date": end_date,
         "symbols": sorted({s for s, _ in inputs}),

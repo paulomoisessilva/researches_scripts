@@ -23,6 +23,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from .fast_core import backtest_arrays, open_log_returns
 from .utils import ensure_dir, setup_logger
 
 logger = setup_logger(__name__)
@@ -69,6 +70,7 @@ def run_backtest(
     df: pd.DataFrame,
     signal: pd.Series,
     cfg_bt: BacktestConfig,
+    collect_trades: bool = True,
 ) -> BacktestResult:
     """Executa backtest com execução next_open em preços de abertura.
 
@@ -77,6 +79,97 @@ def run_backtest(
     df     : DataFrame com colunas 'timestamp', 'open' (e opcionalmente 'close').
     signal : Série com posição desejada no open do candle t (já deslocada 1 barra).
     cfg_bt : Configuração do backtest.
+    collect_trades : monta a tabela de operações; ``False`` devolve ``trades`` vazio (a seleção em
+        passagem única só usa retornos e posições).
+
+    Sem NaN no sinal e sem ``max_holding_bars`` a posição não tem estado e o backtest roda em arrays
+    (``fast_core.backtest_arrays``); fora disso cai em ``run_backtest_loop``. Os dois dão resultado
+    idêntico.
+    """
+    _validate_inputs(df, signal)
+    n = len(df)
+    desired = np.asarray(signal.values, dtype=float)
+    if cfg_bt.max_holding_bars or n < 2 or np.isnan(desired).any():
+        return run_backtest_loop(df, signal, cfg_bt)
+
+    eod_last_bar = None
+    if cfg_bt.close_eod:
+        utc_dates = _utc_dates(df["timestamp"])
+        eod_last_bar = np.zeros(n, dtype=bool)
+        eod_last_bar[:-1] = utc_dates[:-1] != utc_dates[1:]
+        eod_last_bar[-1] = True
+
+    opens = df["open"].values.astype(float)
+    arrays = backtest_arrays(
+        opens, desired, cfg_bt.fee_bps, cfg_bt.slippage_bps,
+        max_position=cfg_bt.max_position, allow_short=cfg_bt.allow_short, eod_last_bar=eod_last_bar,
+    )
+
+    equity = _build_equity(arrays["net"], cfg_bt.initial_capital)
+    timestamps = df["timestamp"] if "timestamp" in df.columns else df.index
+    trades_df = _trade_table(df, opens, arrays["position"], arrays["prev"], cfg_bt) if collect_trades else pd.DataFrame()
+
+    return BacktestResult(
+        config=cfg_bt,
+        equity=pd.Series(equity, index=timestamps, name="equity"),
+        returns=pd.Series(arrays["net"], index=timestamps, name="strategy_return"),
+        positions=pd.Series(arrays["position"], index=timestamps, name="position"),
+        trades=trades_df,
+        gross_returns=pd.Series(arrays["gross"], index=timestamps, name="gross_return"),
+        trade_units=pd.Series(arrays["units"], index=timestamps, name="trade_units"),
+    )
+
+
+def _trade_table(
+    df: pd.DataFrame,
+    opens: np.ndarray,
+    position: np.ndarray,
+    prev: np.ndarray,
+    cfg_bt: BacktestConfig,
+) -> pd.DataFrame:
+    """Tabela de operações a partir das mudanças de posição (mesmas colunas do laço de referência).
+
+    A k-ésima saída fecha a k-ésima entrada: a posição começa zerada e alterna entre zerada e aberta;
+    uma virada (long -> short na mesma barra) conta como saída e nova entrada.
+    """
+    changed = np.flatnonzero(position != prev)
+    exits = changed[prev[changed] != 0]
+    entries = changed[position[changed] != 0]
+    records: list[dict] = []
+    for entry_bar, exit_bar in zip(entries[: len(exits)].tolist(), exits.tolist()):
+        prev_pos = prev[exit_bar]
+        side = "long" if prev_pos > 0 else "short"
+        entry_price = opens[entry_bar]
+        exit_price = opens[exit_bar]
+        records.append({
+            "entry_bar": entry_bar,
+            "exit_bar": exit_bar,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "side": side,
+            "position": prev_pos,
+            "holding_bars": exit_bar - entry_bar,
+            "cost_bps": cfg_bt.fee_bps,
+            "slippage_bps": cfg_bt.slippage_bps,
+            "trade_return": _trade_log_return(entry_price, exit_price, side),
+        })
+
+    trades_df = pd.DataFrame(records)
+    if not trades_df.empty and "entry_bar" in trades_df.columns:
+        trades_df["entry_timestamp"] = df["timestamp"].iloc[trades_df["entry_bar"].values].values
+        trades_df["exit_timestamp"] = df["timestamp"].iloc[trades_df["exit_bar"].values].values
+    return trades_df
+
+
+def run_backtest_loop(
+    df: pd.DataFrame,
+    signal: pd.Series,
+    cfg_bt: BacktestConfig,
+) -> BacktestResult:
+    """Laço de referência de ``run_backtest`` (uma barra por vez, em Python).
+
+    Cobre tudo o que o caminho vetorizado não cobre (``max_holding_bars``, sinal com NaN) e serve de
+    referência nos testes de equivalência.
     """
     _validate_inputs(df, signal)
 
@@ -186,14 +279,7 @@ def run_backtest(
 
 def _open_log_returns(opens: np.ndarray) -> np.ndarray:
     """ln(open_t / open_{t-1}); índice 0 = 0."""
-    out = np.zeros(len(opens))
-    if len(opens) < 2:
-        return out
-    ratio = opens[1:] / opens[:-1]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        out[1:] = np.log(ratio)
-    out[~np.isfinite(out)] = np.nan
-    return out
+    return open_log_returns(opens)
 
 
 def _trade_log_return(entry_price: float, exit_price: float, side: str) -> float:

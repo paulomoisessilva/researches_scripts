@@ -138,7 +138,7 @@ def _eval_combo(task: tuple[dict, dict]) -> tuple[np.ndarray, np.ndarray] | None
     try:
         z = compute_band_z(st["df"], st["name"], struct["window"], struct["k"])
         signal = signal_from_z(z, name=st["name"], **thresh)
-        result = run_backtest(st["df"], signal, st["bt"])
+        result = run_backtest(st["df"], signal, st["bt"], collect_trades=False)
     except Exception:
         return None
     returns = result.returns.to_numpy(dtype=float)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .fast_core import reversal_position_array
 from .utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -53,7 +54,28 @@ def _reversal_confirmed_position(
     Short : z_{t-1} > +entry_short_z e z_t <= +entry_short_z
     Saída long  : z >= exit_long_z
     Saída short : z <= exit_short_z
+
+    Implementação por eventos (``fast_core``); ``_reversal_confirmed_position_loop`` é o laço
+    de referência, com resultado idêntico.
     """
+    position = reversal_position_array(
+        z.to_numpy(dtype=float),
+        entry_long_z=entry_long_z,
+        entry_short_z=entry_short_z,
+        exit_long_z=exit_long_z,
+        exit_short_z=exit_short_z,
+    )
+    return pd.Series(position, index=z.index)
+
+
+def _reversal_confirmed_position_loop(
+    z: pd.Series,
+    entry_long_z: float = 0.8,
+    entry_short_z: float = 0.8,
+    exit_long_z: float = 0.0,
+    exit_short_z: float = 0.0,
+) -> pd.Series:
+    """Laço de referência de ``_reversal_confirmed_position`` (uma barra por vez, em Python)."""
     # Loop sobre ndarray: atribuir via ``Series.iloc[i]`` custava ~90% do tempo do
     # grid search walk-forward (mesma lógica, resultado idêntico).
     n = len(z)
