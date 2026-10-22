@@ -389,6 +389,13 @@ def _compute_stochastic_features(
 
 def _compute_bollinger_features(close: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
     new_cols: dict[str, pd.Series] = {}
+    if feat_cfg.get("compact_bands", False):
+        # só média e desvio por janela; a banda (mid + k*std) é montada na hora em compute_band_z
+        # com as mesmas operações de ``bollinger_bands``, e o resultado é idêntico
+        for w in feat_cfg["bollinger_windows"]:
+            new_cols[f"bb_mid_{w}"] = close.rolling(window=w, min_periods=w).mean()
+            new_cols[f"bb_std_{w}"] = close.rolling(window=w, min_periods=w).std(ddof=1)
+        return new_cols
     for w in feat_cfg["bollinger_windows"]:
         for k in feat_cfg["bollinger_k"]:
             k_str = str(k).replace(".", "")
@@ -402,6 +409,13 @@ def _compute_bollinger_features(close: pd.Series, feat_cfg: dict) -> dict[str, p
 
 def _compute_regression_features(log_price: pd.Series, feat_cfg: dict) -> dict[str, pd.Series]:
     new_cols: dict[str, pd.Series] = {}
+    if feat_cfg.get("compact_bands", False):
+        # só o valor ajustado e o desvio dos resíduos por janela (ver _compute_bollinger_features)
+        for w in feat_cfg["regression_windows"]:
+            fitted, std_res = rolling_ols_last(log_price.values, w)
+            new_cols[f"reg_fitted_{w}"] = pd.Series(fitted, index=log_price.index, name="reg_fitted")
+            new_cols[f"reg_std_{w}"] = pd.Series(std_res, index=log_price.index, name="reg_std")
+        return new_cols
     for w in feat_cfg["regression_windows"]:
         fitted, bands = regression_bands_multi_k(log_price, w, list(feat_cfg["regression_k"]))
         new_cols[f"reg_fitted_{w}"] = fitted

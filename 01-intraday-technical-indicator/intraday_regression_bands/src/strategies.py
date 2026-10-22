@@ -137,19 +137,27 @@ def compute_band_z(
     """Calcula z normalizado para estratégias baseadas em bandas."""
     k_str = str(k).replace(".", "")
 
+    # Modo compacto (features.compact_bands): só centro e desvio por janela; a banda superior sai
+    # de centro + k * desvio, com as mesmas operações das colunas completas (resultado idêntico).
     if strategy_name == "bollinger":
         col_upper = f"bb_upper_{window}_{k_str}"
         col_mid = f"bb_mid_{window}"
-        if col_upper not in df.columns:
-            raise KeyError(f"Feature '{col_upper}' não encontrada.")
-        return _price_band_z(df["close"], df[col_mid], df[col_upper])
+        col_std = f"bb_std_{window}"
+        if col_upper in df.columns:
+            return _price_band_z(df["close"], df[col_mid], df[col_upper])
+        if col_std in df.columns and col_mid in df.columns:
+            return _price_band_z(df["close"], df[col_mid], df[col_mid] + k * df[col_std])
+        raise KeyError(f"Feature '{col_upper}' não encontrada.")
 
     if strategy_name == "regression_bands":
         col_upper = f"reg_upper_{window}_{k_str}"
         col_fitted = f"reg_fitted_{window}"
-        if col_upper not in df.columns:
-            raise KeyError(f"Feature '{col_upper}' não encontrada.")
-        return _price_band_z(df["log_price"], df[col_fitted], df[col_upper])
+        col_std = f"reg_std_{window}"
+        if col_upper in df.columns:
+            return _price_band_z(df["log_price"], df[col_fitted], df[col_upper])
+        if col_std in df.columns and col_fitted in df.columns:
+            return _price_band_z(df["log_price"], df[col_fitted], df[col_fitted] + k * df[col_std])
+        raise KeyError(f"Feature '{col_upper}' não encontrada.")
 
     if strategy_name == "return_residuals":
         col_upper = f"resid_upper_{window}_{k_str}"

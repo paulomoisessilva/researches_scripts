@@ -758,8 +758,8 @@ class _WindowContext:
 
 
 _BAND_FEATURE_PREFIXES = {
-    "bollinger": ("bb_upper_", "bb_mid_"),
-    "regression_bands": ("reg_upper_", "reg_fitted_"),
+    "bollinger": ("bb_upper_", "bb_mid_", "bb_std_"),
+    "regression_bands": ("reg_upper_", "reg_fitted_", "reg_std_"),
     "return_residuals": ("resid_upper_", "resid_"),
 }
 _BAND_BASE_COLUMNS = ("timestamp", "open", "close", "log_price")

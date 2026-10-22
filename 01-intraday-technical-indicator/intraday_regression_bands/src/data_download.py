@@ -233,6 +233,12 @@ def download_all(
 ) -> None:
     """Baixa todos os dados conforme a configuração."""
     data_cfg = cfg["data"]
+    if data_cfg.get("aggregate_from"):
+        logger.info(
+            "Intervalos %s saem da agregação de %s (data.aggregate_from): nada a baixar.",
+            intervals or data_cfg["intervals"], data_cfg["aggregate_from"],
+        )
+        return
     syms = symbols or data_cfg["symbols"]
     ints = intervals or data_cfg["intervals"]
     start = data_cfg["start_date"]

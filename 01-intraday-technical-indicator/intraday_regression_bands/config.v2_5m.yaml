@@ -1,0 +1,81 @@
+# Estudo v2, 5 minutos: BTCUSDT, ETHUSDT e SOLUSDT, walk-forward diário com posição contínua.
+# Protocolo: PREREGISTRATION_v2.md (SHA-256 deste arquivo em results/v2/PREREG_HASHES.txt).
+#
+# Os candles de 5 minutos saem da agregação do 1 minuto (data.aggregate_from), na mesma pasta
+# processada do config.v2_1m.yaml; nada é baixado para este config.
+#
+#   sistemas   : bollinger e regression_bands (log-preço), reversão confirmada, limiar de entrada 1,0,
+#                saída em z = 0
+#   janelas    : 12, 24, 48, 96, 192 e 288 barras = 1 h, 2 h, 4 h, 8 h, 16 h e 24 h
+#   k          : 1,5 a 7,0 em passos de 0,5 (12 valores)  -> 144 combinações por ativo
+#   lookbacks  : study.validation_days = 1, 2, 3, 7, 14, 21 e 28 dias (o treino de 2 dias só aquece)
+#   seleção    : Sharpe bruto (custo 0); o líquido a custo c sai de bruto - c * unidades
+#   posição    : contínua, uma só trajetória com estado carregado (carry_position_state)
+#   período    : dados de 2021-01-04 a 2026-07-01; testes de 2021-02-03 a 2026-06-30
+#
+#   python scripts/02_prepare_data.py     --config config.v2_5m.yaml      # depois do config.v2_1m.yaml
+#   python scripts/05_run_walk_forward.py --config config.v2_5m.yaml --study --symbols BTCUSDT
+
+project:
+  name: "intraday_regression_bands_v2_5m"
+  timezone: "UTC"
+
+data:
+  source: "binance_public_data"
+  market: "futures_um"
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  intervals: ["5m"]
+  aggregate_from: "1m"
+  start_date: "2021-01-04"
+  end_date: "2026-07-01"
+  raw_dir: "data/raw/binance"
+  processed_dir: "data/processed_v2"
+
+backtest:
+  initial_capital: 10000
+  allow_short: true
+  execution: "next_open"
+  fee_bps_per_side: [0]
+  slippage_bps_per_side: [0]
+  max_position: 1.0
+  close_position_end_of_day: false
+  max_holding_bars: null
+
+features:
+  bollinger_windows: [12, 24, 48, 96, 192, 288]
+  bollinger_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+  regression_windows: [12, 24, 48, 96, 192, 288]
+  regression_k: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
+  compact_bands: true
+
+strategies:
+  - bollinger
+  - regression_bands
+
+strategy:
+  entry_mode: "reversal_confirmed"
+  entry_long_z: [1.0]
+  entry_short_z: [1.0]
+  exit_long_z: [0.0]
+  exit_short_z: [0.0]
+  allow_pyramiding: false
+
+walk_forward:
+  # Lookback de seleção = validation_days (o treino só aquece a estratégia).
+  train_days: 2
+  validation_days: 28            # execução primária; o estudo varia em study.validation_days
+  test_days: 1
+  step_days: 1
+  oos_start: "2021-02-03"        # 30 dias depois do início dos dados: train_days + maior lookback
+  close_position_end_of_day: false
+  carry_position_state: true
+  selection_metric: "net_sharpe"
+  selection_engine: "single_pass"
+  parallel_workers: 1
+  save_random_equity: false
+  runs_dir: "results/v2/5m/walk_forward"
+
+study:
+  validation_days: [1, 2, 3, 7, 14, 21, 28]
+  cost_scenarios:
+    - [0, 0]
