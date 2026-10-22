@@ -1,0 +1,13 @@
+2026-10-22T01:30:47Z
+commit 1600544284c751eaa8694f40d5ca2a0c363457b6 (nada novo foi baixado nem rodado antes desta gravacao)
+# SHA-256 do conteudo dos arquivos no commit acima (identico ao dos arquivos em disco na gravacao)
+c6973301a66e8f6949797545d91247b28adffa36056c73c5931896624e79b976 *PREREGISTRATION_v2.md
+88bb64c9fccd58a5421915d584bee01d0b1c6f54adfa315e950ae7d5a5eaa070 *config.v2_1m.yaml
+97d95dd604f362e3b8f00bd831c3f05801bc9bc804ee06dca069f76abbf0b710 *config.v2_5m.yaml
+f71278fd15db17c761cfcb5fa845c105185531091c7413908c892b78ded9ca07 *config.v2_15m.yaml
+# git blob SHA-1 (git rev-parse HEAD:arquivo)
+ed14cdf983f8e60a923d3bfd9a223e4602d4b48e PREREGISTRATION_v2.md
+a9127bbb0690900d92de2c12d66e11c7a3feba83 config.v2_1m.yaml
+d34f965abe3dfccbdea26a79761ae11513a46427 config.v2_5m.yaml
+af2de492106ac2d04246c98de63914070edf1988 config.v2_15m.yaml
+# conferir: git show 1600544:01-intraday-technical-indicator/intraday_regression_bands/<arquivo> | sha256sum

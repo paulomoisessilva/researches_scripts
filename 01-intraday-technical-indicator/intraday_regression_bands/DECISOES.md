@@ -57,7 +57,7 @@ vêm de `snapshots/` e do relatório.
 | # | Questão | Recomendação de Claude |
 |---|---|---|
 | O4 | Título e estrutura. | Adiado: Paulo prefere discutir depois. Título sugerido por Claude: "Bandas de reversão à média em criptomoedas: o edge bruto sobrevive aos custos e ao data snooping?". |
-| O6 | Aprovação final do texto de `PREREGISTRATION_v2.md` (inclui a interpretação de D26). | Aguardando Paulo. Depois disso: escrever os três configs, gravar o hash, commit e push, e só então baixar dezembro de 2020 e 2026. |
+| O6 | Download de 2026 (janeiro a julho; só a barra de 01/07 do mês de julho é usada) e preparação dos dados. | Aguardando o OK de Paulo. O texto do pré-registro foi aprovado e os configs foram escritos. O SHA-256 do protocolo e dos três configs foi gravado em `results/v2/PREREG_HASHES.txt` em 2026-10-22T01:30:47Z, sobre o commit `1600544`, antes de baixar qualquer dado (o arquivo está em `results/`, ignorado pelo git, e entra no repositório com `git add -f`). |
 
 Resolvidas em 2026-10-21: O1 (SPA global primário, D17), O2 (NumPy por eventos, D21), O3 (notebook primeiro; EC2 se for preciso, D22) e O5 (tabela de custos reais).
 
@@ -111,7 +111,7 @@ Resolvidas em 2026-10-21: O1 (SPA global primário, D17), O2 (NumPy por eventos,
 1. Feito em 2026-10-21, ainda não commitado: motor NumPy por eventos (D21) e trajetória contínua com estado carregado (D16), com testes de equivalência e da regra de troca. Falta: estatísticas diárias por combinação (um passe para todos os lookbacks) e o SPA por matriz de contagens, que não eram necessários para o motor funcionar.
 2. Feito em 2026-10-21: tabela de custos reais (O5, acima). Título e estrutura (O4) ficam para depois.
 3. Rascunho do pré-registro v2 escrito em `PREREGISTRATION_v2.md` (sem hash, não commitado): 3 frequências, lookbacks {1, 2, 3, 7, 14, 21, 28}, janelas de D6 e D19, dados de 2021-01-04 a 2026-07-01 e testes de 2021-02-03 a 2026-06-30 (1.974 dias), seleção a custo 0, trajetória contínua com estado carregado, SPA global primário com curva e custo-limite, 1.440 candidatas no diagnóstico de parâmetros fixos, sem regra de aprovação e sem menção a estudos anteriores (D23). Falta Paulo aprovar o texto (O6).
-4. Ajustar as configs, baixar os dados de 1, 5 e 15 min até 2026-09 (só com OK de Paulo) e conferir com um bloco pequeno antes de rodar tudo.
+4. Configs escritos e hash gravado (2026-10-22T01:30:47Z). Falta, só com OK de Paulo: baixar 2026 (janeiro a julho), preparar os dados (1 min a partir dos arquivos brutos; 5 e 15 min por agregação) e gravar o SHA-256 dos arquivos processados; depois, um bloco pequeno para medir tempo antes de rodar tudo.
 5. Medir um bloco real e decidir onde rodar (D22); depois rodar, com análise geral e diagnóstico de parâmetros fixos.
 6. Atualizar o relatório (remover `return_residuals`, placebo, fumaça e a palavra "piloto", números novos, subseção da métrica e limitação do funding) e, só se Paulo pedir, commit e push.
 
