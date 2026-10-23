@@ -248,6 +248,100 @@ def block_contributions(g: pd.DataFrame) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# Ganho em bps contra volume e volatilidade (o que importa é o bruto, não só o acerto)
+# ---------------------------------------------------------------------------
+
+
+def winsorize(x: np.ndarray, lo: float = 1.0, hi: float = 99.0) -> np.ndarray:
+    a, b = np.percentile(x, [lo, hi])
+    return np.clip(x, a, b)
+
+
+def clustered_mean(y: np.ndarray, groups: np.ndarray) -> tuple[float, float]:
+    """Média e erro-padrão da média com erros agrupados (``groups`` = semana)."""
+    y = np.asarray(y, dtype=float)
+    codes = pd.factorize(groups)[0]
+    n, n_groups = len(y), int(codes.max()) + 1
+    sums = np.bincount(codes, weights=y - y.mean(), minlength=n_groups)
+    return float(y.mean()), float(np.sqrt(n_groups / max(n_groups - 1, 1) * (sums ** 2).sum()) / n)
+
+
+def gross_outcomes(g: pd.DataFrame) -> dict[str, np.ndarray]:
+    """O bruto de cada operação em três escalas: ``raw`` (bps), ``w`` (bps cortado nos percentis 1 e 99) e ``pv`` (bruto em unidades da
+    volatilidade de 1 h na entrada, cortado). O ``pv`` tira o efeito mecânico de que, com mais volatilidade, tudo se mede em bps maiores."""
+    gross = g["gross_bps"].to_numpy(dtype=float)
+    rv = np.maximum(g["rv"].to_numpy(dtype=float), 1e-9)
+    return {"raw": gross, "w": winsorize(gross), "pv": winsorize(gross / rv)}
+
+
+def gross_regime_effects(g: pd.DataFrame) -> dict[str, float]:
+    """MQO do bruto contra volume e volatilidade da última hora (z, nível), com os dois no modelo e efeitos fixos de lookback e estratégia.
+
+    Coeficientes em bps por desvio padrão (``raw``, ``w``) ou em unidades de volatilidade (``pv``), erros agrupados por semana. Para o
+    ``w`` e o ``pv``: coeficiente do volume em cada metade dos dias e R2 fora da amostra (ajusta na 1ª metade, avalia na 2ª, contra o
+    modelo só com efeitos fixos).
+    """
+    grp = g["week"].to_numpy()
+    X, pos = design(g, "", LEVEL_COLS)
+    X0, _ = design(g, "", None)
+    iv, ir = pos["z_qv"][0], pos["z_rv"][0]
+    tr = ~g["second_half"].to_numpy(); te = ~tr
+    out: dict[str, float] = {"n": len(g)}
+    for tag, y in gross_outcomes(g).items():
+        r = fit_ols(y, X, grp)
+        out[f"b_volume_{tag}"], out[f"p_volume_{tag}"] = float(r.params[iv]), float(r.pvalues[iv])
+        out[f"b_vol_{tag}"], out[f"p_vol_{tag}"] = float(r.params[ir]), float(r.pvalues[ir])
+        if tag == "raw":
+            continue
+        for half, m in (("h1", tr), ("h2", te)):
+            if m.sum() > X.shape[1]:
+                rh = fit_ols(y[m], X[m], grp[m])
+                out[f"b_volume_{tag}_{half}"], out[f"b_vol_{tag}_{half}"] = float(rh.params[iv]), float(rh.params[ir])
+            else:
+                out[f"b_volume_{tag}_{half}"] = out[f"b_vol_{tag}_{half}"] = float("nan")
+        if tr.any() and te.any():
+            b0 = np.linalg.lstsq(X0[tr], y[tr], rcond=None)[0]
+            b1 = np.linalg.lstsq(X[tr], y[tr], rcond=None)[0]
+            sse0, sse1 = ((y[te] - X0[te] @ b0) ** 2).sum(), ((y[te] - X[te] @ b1) ** 2).sum()
+            out[f"oos_r2_{tag}"] = float(1 - sse1 / sse0)
+        else:
+            out[f"oos_r2_{tag}"] = float("nan")
+    return out
+
+
+def gross_by_tercile(g: pd.DataFrame, col: str) -> pd.DataFrame:
+    """Por tercil de ``col``: acerto, ganho e perda médios, bruto médio (com erro-padrão agrupado por semana), mediana e volatilidade média.
+
+    Mostra se a queda do acerto com o volume vem junto com uma queda do bruto, ou se é compensada por ganhos maiores.
+    """
+    q = pd.qcut(g[col], 3, labels=False, duplicates="drop")
+    rows = []
+    for i in sorted(q.dropna().unique()):
+        s = g[q == i]
+        r = s["gross_bps"].to_numpy(dtype=float)
+        wins, losses = r[r > 0], r[r < 0]
+        mean, se = clustered_mean(r, s["week"].to_numpy())
+        rows.append({"tercile": int(i) + 1, "n": len(s), "hit_pct": 100 * len(wins) / len(r),
+                     "mean_win": float(wins.mean()) if len(wins) else float("nan"),
+                     "mean_loss": float(losses.mean()) if len(losses) else float("nan"),
+                     "mean_gross": mean, "se_mean_gross": se, "median_gross": float(np.median(r)),
+                     "mean_rv_bps": float(s["rv"].mean()) if "rv" in s else float("nan")})
+    return pd.DataFrame(rows)
+
+
+def gross_deciles(g: pd.DataFrame, col: str, bins: int = 10) -> dict[str, float]:
+    """Bruto médio, mediano e médio cortado (percentis 1 e 99 de todas as operações) por decil de ``col``."""
+    q = pd.qcut(g[col], bins, labels=False, duplicates="drop")
+    gross = g["gross_bps"].to_numpy(dtype=float)
+    gw = winsorize(gross)
+    out: dict[str, float] = {}
+    for i in sorted(q.dropna().unique()):
+        m = (q == i).to_numpy()
+        out[f"mean_D{int(i) + 1}"], out[f"median_D{int(i) + 1}"], out[f"wmean_D{int(i) + 1}"] = float(gross[m].mean()), float(np.median(gross[m])), float(gw[m].mean())
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Persistência
 # ---------------------------------------------------------------------------
 

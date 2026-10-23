@@ -12,7 +12,11 @@ from src.v2_behavior import (
     autocorrelation,
     block_contributions,
     calendar_summary,
+    clustered_mean,
     decile_table,
+    gross_by_tercile,
+    gross_deciles,
+    gross_regime_effects,
     half_agreement,
     hourly_acf,
     hourly_counts,
@@ -50,7 +54,8 @@ def _trades(n=40_000, seed=0, p_fn=None, vol_fn=None, lookbacks=(28,), strategie
     df = pd.DataFrame({"freq": "1m", "strategy": rng.choice(strategies, n), "asset": "BTCUSDT", "lookback": rng.choice(lookbacks, n),
                        "entry_ts": ts, "exit_ts": ts + pd.to_timedelta(rng.integers(1, 120, n), unit="m"), "side": "long",
                        "gross_bps": gross, "holding_min": rng.integers(1, 120, n).astype(float)})
-    feats = pd.DataFrame({"z_qv": zq, "z_rv": rng.normal(size=n), "s_rv": rng.normal(size=n), "s_qv": rng.normal(size=n)}, index=ts)
+    rv = np.random.default_rng(seed + 1000).uniform(20.0, 100.0, n)          # gerador à parte: não muda os sorteios dos outros testes
+    feats = pd.DataFrame({"z_qv": zq, "z_rv": rng.normal(size=n), "s_rv": rng.normal(size=n), "s_qv": rng.normal(size=n), "rv": rv}, index=ts)
     feats = feats[~feats.index.duplicated()]
     return df, feats
 
@@ -79,6 +84,57 @@ class TestPrepare:
         assert len(prepare_trades(df, feats)) == 2
         g = prepare_trades(df, feats, require_features=True)
         assert len(g) == 1 and g["z_qv"].iloc[0] == 3.0
+
+
+def _with_gross(slope_volume=0.0, slope_vol=0.0, seed=0, n=40_000, scale_by_rv=0.0):
+    """Operações com o bruto em bps dado por inclinações em z_qv e z_rv mais ruído (``scale_by_rv``: o ruído e o efeito crescem com rv)."""
+    g = _prepared(seed=seed, n=n)
+    rng = np.random.default_rng(seed + 7)
+    scale = 1.0 + scale_by_rv * g["rv"].to_numpy()
+    g["gross_bps"] = scale * (slope_volume * g["z_qv"] + slope_vol * g["z_rv"] + rng.normal(0, 20, len(g)))
+    g["win"] = (g["gross_bps"] > 0).astype(float)
+    return g
+
+
+class TestGrossRegime:
+    def test_clustered_mean_known_values(self):
+        assert clustered_mean(np.array([1.0, 3.0]), np.array(["a", "b"])) == pytest.approx((2.0, 1.0))
+        assert clustered_mean(np.array([1.0, 3.0]), np.array(["a", "a"]))[1] == pytest.approx(0.0)   # um só agrupamento não tem variação entre grupos
+        assert clustered_mean(np.full(10, 5.0), np.arange(10))[1] == 0.0
+
+    def test_planted_volume_slope_is_recovered_and_volatility_is_not(self):
+        r = gross_regime_effects(_with_gross(slope_volume=3.0))
+        assert 2.5 < r["b_volume_raw"] < 3.5 and r["p_volume_raw"] < 1e-6 and 2.5 < r["b_volume_w"] < 3.5
+        assert abs(r["b_vol_raw"]) < 0.6 and r["p_vol_raw"] > 0.001
+        assert 2.0 < r["b_volume_w_h1"] < 4.0 and 2.0 < r["b_volume_w_h2"] < 4.0     # a inclinação está nas duas metades
+        assert r["oos_r2_w"] > 0.005                                                  # explica uma fração pequena, mas positiva, fora da amostra
+
+    def test_no_slope_gives_no_out_of_sample_gain(self):
+        r = gross_regime_effects(_with_gross(seed=3))
+        assert abs(r["b_volume_w"]) < 0.6 and abs(r["b_vol_w"]) < 0.6 and r["oos_r2_w"] < 0.002
+
+    def test_per_volatility_scale_removes_the_mechanical_scale_effect(self):
+        # o bruto em bps cresce com rv, mas em unidades de volatilidade a inclinação do volume é a plantada
+        g = _with_gross(seed=5)
+        g["gross_bps"] = 0.05 * g["rv"] * g["z_qv"] + np.random.default_rng(9).normal(0, 20, len(g))
+        r = gross_regime_effects(g)
+        assert 0.04 < r["b_volume_pv"] < 0.06 and r["p_volume_pv"] < 1e-6
+
+    def test_hit_rate_can_fall_while_the_mean_gross_rises(self):
+        g = _with_gross(seed=11)
+        t = pd.qcut(g["z_qv"], 3, labels=False).to_numpy()
+        rng = np.random.default_rng(13)
+        p_win, size = np.array([0.7, 0.6, 0.5])[t], np.array([10.0, 25.0, 40.0])[t]
+        g["gross_bps"] = np.where(rng.random(len(g)) < p_win, size, -30.0)
+        tab = gross_by_tercile(g, "z_qv")
+        assert tab["hit_pct"].is_monotonic_decreasing and tab["mean_win"].is_monotonic_increasing and tab["mean_gross"].is_monotonic_increasing
+        assert tab["mean_gross"].iloc[0] == pytest.approx(-2.0, abs=0.5) and tab["mean_gross"].iloc[2] == pytest.approx(5.0, abs=0.7)
+        assert (tab["se_mean_gross"] > 0).all() and abs(tab["n"].diff().dropna()).max() <= 1
+
+    def test_deciles_follow_the_planted_slope(self):
+        d = gross_deciles(_with_gross(slope_volume=4.0, seed=2), "z_qv")
+        assert len([k for k in d if k.startswith("mean_D")]) == 10
+        assert d["mean_D10"] - d["mean_D1"] > 8.0 and d["wmean_D10"] > d["wmean_D5"] > d["wmean_D1"]
 
 
 class TestCalendar:
