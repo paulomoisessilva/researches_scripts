@@ -44,3 +44,32 @@ Método de trabalho: revisão etapa por etapa, uma parte do artigo de cada vez (
 * **Estilo (E13, E14, E23)**: aplicado ao documento todo. Falta só o ajuste fino que o Paulo pedir ao ler. Ficaram sem mudança os blocos de tabelas, fórmulas, legendas e os Apêndices.
 * **Diagrama do walk-forward**: ainda falta a versão v2.
 * **Periódico ou conferência-alvo**: define o limite de páginas, o modelo e se há "Contribuições" explícitas.
+
+
+## Pendências da literatura recente (anotado em 01/11/2026)
+
+Fichas F40 a F48 estão em `papers/Fichamento phase 4.txt` (papers/ é ignorado pelo Git; ainda em txt, não em docx). PDFs em `papers/phase-4`.
+
+**Ainda sem PDF (a obter e fichar):**
+- Wen, Bouri, Xu e Zhao (2022), Intraday return predictability in the cryptocurrency markets: Momentum, reversal, or both. DOI 10.1016/j.najef.2022.101733. É o mais importante, por tratar de momentum e reversão intradiária no Bitcoin (2013 a 2020).
+- Zaremba, Bilgin, Long e Mercik (2021), Up or down? Short-term reversal, momentum, and liquidity effects in cryptocurrency markets. DOI 10.1016/j.irfa.2021.101908.
+- Tzouvanas, Kizys e Tsend-Ayush (2020), Momentum trading in cryptocurrencies. DOI 10.1016/j.econlet.2019.108728.
+- Grobys e Sapkota (2019), Cryptocurrencies and momentum. DOI 10.1016/j.econlet.2019.03.028.
+- Fil e Kristoufek (2020), Pairs trading in cryptocurrency markets (barras de 5 minutos). DOI 10.1109/access.2020.3024619.
+- Gao, Han, Li e Zhou (2018), Market intraday momentum. DOI 10.1016/j.jfineco.2018.05.009. O arquivo gao_et_al_intramom.pdf era na verdade Baltussen et al. (2021), já renomeado.
+
+**Lidos só em parte (conferir os números antes de citar):**
+- Liu e Tsyvinski (2021), RFS. DOI 10.1093/rfs/hhaa113. Lida a versão de trabalho NBER 24877.
+- Liu, Tsyvinski e Wu (2022), Journal of Finance. DOI 10.1111/jofi.13119. Lida a versão de trabalho NBER 25882.
+- Baltussen, Da, Lammers e Martens (2021), JFE. DOI 10.1016/j.jfineco.2021.04.029.
+
+**Outros:**
+- Kitron e Wengrowicz (2026), arXiv 2608.21888: preprint sem revisão, autores com interesse comercial. Ler os apêndices e ver se saiu versão publicada, com DOI.
+- Eross et al. (2019), DOI 10.1016/j.ribaf.2019.01.008, e Shen, Urquhart e Wang (2022), DOI 10.1111/fire.12290: lidos as versões aceitas, que podem diferir das publicadas.
+- Descartada como fonte: tese de mestrado sobre Bollinger em barras horárias (Ekström, 2025), por não ser revisada.
+
+**Decisões aprovadas e ainda não aplicadas no Docs:** Poterba e Summers (nova redação), tirar "momentum" da frase de Grobys e Detzel, Cont mantido na seção do bootstrap (o estudo usa bootstrap estacionário no SPA), ressalva de Lo (2002) sobre a anualização, redação de Park e Irwin. Faltam aprovar: parágrafo novo sobre cripto em horizontes curtos, nova lacuna da seção 2.7 e as seis referências novas.
+
+**Outras pendências:** diagrama do walk-forward v2; conferir se a tabela "Sharpe bruto" do relatório mostra números anualizados (decide se a ressalva de Lo entra na metodologia); fichas das fases 3 e 4 só em txt (a fase 3 já tem docx).
+
+**Aplicado no Docs em 01/11/2026 (rev 211):** Introdução (Grobys e Detzel sem "momentum"; definição de data snooping com Park e Irwin); 2.1 (Park e Irwin com período e ressalva de lucro líquido; Poterba e Summers); 2.2 (parágrafo novo sobre cripto em horizontes curtos, com Liu e Tsyvinski, Shen et al., De Nicola, Corbet e Katsiampa, Caporale e Plastun e Kitron e Wengrowicz; Wei et al. com a razão de Detzel e a queda do Sharpe fora da amostra); 2.3 (Lo); 2.4 (Cont); 2.7 (lacuna reescrita); 3.4 (ressalva da anualização, Lo 2002); seis referências novas. Fica sem aplicar apenas o que está na lista de pendências acima (leituras e PDFs que faltam). Conferir depois: o parágrafo novo cita Liu e Tsyvinski só de forma qualitativa (versão de trabalho lida em parte).
