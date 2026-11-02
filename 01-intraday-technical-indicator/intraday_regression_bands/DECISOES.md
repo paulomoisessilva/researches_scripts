@@ -147,6 +147,6 @@ Tudo descreve a amostra (1.526.405 operações, 126 trajetórias, 1.974 dias); e
 ## Onde estão as coisas
 
 - Código e resultados em `intraday_regression_bands/`: scripts 13 a 16 (estudo de 1 min em blocos, análise geral, parâmetros fixos, persistência), `src/full_study.py`, `src/fixed_params.py`, snapshots `2026-10-v1`, `v2-pilot-1m` e `v3-full-1m`.
-- Estudo v2: `src/v2_study.py` (SPA, CBE, perfil das entradas) e scripts 17 a 19; análises descritivas e robustez em `src/v2_trades.py`, `v2_behavior.py`, `v2_exits.py`, `v2_robustness.py` e scripts 20 a 24 (ordem: 20 primeiro, que grava `results/v2/analysis/trades.parquet`; 21, 22 e 24 dependem dele; 23 depende do `fixed_daily.npz` do script 18). Saídas em `results/v2/analysis/` (ignorado pelo git).
+- Estudo v2: `src/v2_study.py` (SPA, CBE, perfil das entradas) e scripts 17 a 19; análises descritivas e robustez em `src/v2_trades.py`, `v2_behavior.py`, `v2_exits.py`, `v2_robustness.py` e scripts 20 a 25 (ordem: 20 primeiro, que grava `results/v2/analysis/trades.parquet`; 21, 22, 24 e 25 dependem dele; o 25 refaz com decis a análise por tercil do 24, em `results/v2/analysis/gross_regime/deciles_*.csv`; 23 depende do `fixed_daily.npz` do script 18). Saídas em `results/v2/analysis/` (ignorado pelo git).
 - Runs completas fora do git: `results/full_1m/` e a cópia em `C:\Users\Paulo\Documents\Pessoal\backups\`.
 - Dados de 5 anos em 1 min: `data/processed_full_1m/` (ignorado pelo git).

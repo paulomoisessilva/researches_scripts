@@ -14,6 +14,8 @@ from src.v2_behavior import (
     calendar_summary,
     clustered_mean,
     decile_table,
+    extreme_bins_difference,
+    gross_by_quantile,
     gross_by_tercile,
     gross_deciles,
     gross_regime_effects,
@@ -130,6 +132,16 @@ class TestGrossRegime:
         assert tab["hit_pct"].is_monotonic_decreasing and tab["mean_win"].is_monotonic_increasing and tab["mean_gross"].is_monotonic_increasing
         assert tab["mean_gross"].iloc[0] == pytest.approx(-2.0, abs=0.5) and tab["mean_gross"].iloc[2] == pytest.approx(5.0, abs=0.7)
         assert (tab["se_mean_gross"] > 0).all() and abs(tab["n"].diff().dropna()).max() <= 1
+
+    def test_quantile_table_has_equal_bins_and_the_tercile_wrapper_matches(self):
+        g = _with_gross(slope_volume=4.0, seed=3)
+        tab = gross_by_quantile(g, "z_qv", 10)
+        assert list(tab["bin"]) == list(range(1, 11)) and abs(tab["n"].diff().dropna()).max() <= 1
+        assert (tab["n_win"] + tab["n_loss"] <= tab["n"]).all()
+        ter = gross_by_tercile(g, "z_qv")
+        assert list(ter["tercile"]) == [1, 2, 3] and ter["n"].sum() == len(g)
+        d = extreme_bins_difference(g, "z_qv", 10)
+        assert d["diff_bps"] > 8.0 and d["p_value"] < 0.05
 
     def test_deciles_follow_the_planted_slope(self):
         d = gross_deciles(_with_gross(slope_volume=4.0, seed=2), "z_qv")

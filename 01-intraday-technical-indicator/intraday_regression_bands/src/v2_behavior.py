@@ -309,24 +309,41 @@ def gross_regime_effects(g: pd.DataFrame) -> dict[str, float]:
     return out
 
 
-def gross_by_tercile(g: pd.DataFrame, col: str) -> pd.DataFrame:
-    """Por tercil de ``col``: acerto, ganho e perda médios, bruto médio (com erro-padrão agrupado por semana), mediana e volatilidade média.
+def gross_by_quantile(g: pd.DataFrame, col: str, bins: int = 10) -> pd.DataFrame:
+    """Por faixa de ``col`` (``bins`` faixas com o mesmo número de operações): acerto, ganho e perda médios, bruto médio (com erro-padrão
+    agrupado por semana), mediana, volatilidade média e as contagens de ganhos e perdas (para agregar grupos).
 
     Mostra se a queda do acerto com o volume vem junto com uma queda do bruto, ou se é compensada por ganhos maiores.
     """
-    q = pd.qcut(g[col], 3, labels=False, duplicates="drop")
+    q = pd.qcut(g[col], bins, labels=False, duplicates="drop")
     rows = []
     for i in sorted(q.dropna().unique()):
         s = g[q == i]
         r = s["gross_bps"].to_numpy(dtype=float)
         wins, losses = r[r > 0], r[r < 0]
         mean, se = clustered_mean(r, s["week"].to_numpy())
-        rows.append({"tercile": int(i) + 1, "n": len(s), "hit_pct": 100 * len(wins) / len(r),
+        rows.append({"bin": int(i) + 1, "n": len(s), "n_win": len(wins), "n_loss": len(losses), "hit_pct": 100 * len(wins) / len(r),
                      "mean_win": float(wins.mean()) if len(wins) else float("nan"),
                      "mean_loss": float(losses.mean()) if len(losses) else float("nan"),
                      "mean_gross": mean, "se_mean_gross": se, "median_gross": float(np.median(r)),
                      "mean_rv_bps": float(s["rv"].mean()) if "rv" in s else float("nan")})
     return pd.DataFrame(rows)
+
+
+def gross_by_tercile(g: pd.DataFrame, col: str) -> pd.DataFrame:
+    """``gross_by_quantile`` com três faixas (tercis), com a coluna ``tercile`` no lugar de ``bin``."""
+    return gross_by_quantile(g, col, 3).rename(columns={"bin": "tercile"})
+
+
+def extreme_bins_difference(g: pd.DataFrame, col: str, bins: int = 10) -> dict[str, float]:
+    """Bruto médio da última faixa menos o da primeira (MQO com erros agrupados por semana), com o p-valor da diferença."""
+    q = pd.qcut(g[col], bins, labels=False, duplicates="drop")
+    top = q.max()
+    m = ((q == 0) | (q == top)).to_numpy()
+    y = g.loc[m, "gross_bps"].to_numpy(dtype=float)
+    x = np.column_stack([np.ones(m.sum()), (q[m] == top).to_numpy(dtype=float)])
+    r = fit_ols(y, x, g.loc[m, "week"].to_numpy())
+    return {"diff_bps": float(r.params[1]), "p_value": float(r.pvalues[1])}
 
 
 def gross_deciles(g: pd.DataFrame, col: str, bins: int = 10) -> dict[str, float]:
